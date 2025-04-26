@@ -1,0 +1,11 @@
+*pycache*
+Trained_Models
+*KDE_Fits*
+*KDE_Fits_OLD*
+*LUT_Stats*
+Inference
+Generations
+*.ipynb*
+*.ipynb_checkpoints*
+Old_Gens
+OldGens
