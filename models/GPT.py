@@ -140,6 +140,7 @@ class Cherenkov_GPT(nn.Module):
         self.SOS_token = 0
         self.EOS_token = 6145
         self.pad_token = 6146
+        self.time_pad_token = time_vocab - 1
         self.EOS_time_token = time_vocab - 2
 
     def forward(self, x,t,k,padding_mask=None):
@@ -198,16 +199,20 @@ class Cherenkov_GPT(nn.Module):
     def post_process(self, pixels, times):
         processed_pixels = []
         processed_times = []
+
+        pixel_mask_tokens = torch.tensor([self.pad_token, self.SOS_token, self.EOS_token], device=pixels.device)
+        time_mask_tokens = torch.tensor([self.time_pad_token, self.SOS_token, self.EOS_time_token], device=pixels.device)
         
         for idx, t in zip(pixels, times):
-            idx = idx[2:] # remove kinematic tokens
-            t = t[2:] # remove kinematic tokens
-            mask = ~torch.isin(idx, torch.tensor([self.pad_token, self.SOS_token, self.EOS_token], device=pixels.device))
-            processed_pixels.append((idx[mask] -1).detach().cpu().numpy())
+            pixel_mask = ~torch.isin(idx, pixel_mask_tokens)
+            time_mask = ~torch.isin(t, time_mask_tokens)
+            mask = pixel_mask & time_mask  # must be valid in both pixel and time
+            
+            processed_pixels.append((idx[mask] - 1).detach().cpu().numpy())
             if self.digitize_time and self.detokenize_func is not None:
-                processed_times.append(self.detokenize_func(t[mask].detach().cpu().numpy())) 
+                processed_times.append(self.detokenize_func(t[mask].detach().cpu().numpy()))
             else:
-                processed_times.append(t[mask].detach().cpu().numpy()) 
+                processed_times.append(t[mask].detach().cpu().numpy())
         
         return processed_pixels, processed_times
 
