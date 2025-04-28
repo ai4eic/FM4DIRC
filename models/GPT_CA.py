@@ -7,9 +7,6 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-############################################################
-# References: https://github.com/karpathy/minGPT/tree/master
-############################################################
 
 class ResNetBlock(nn.Module):
     def __init__(self, hidden_units):
@@ -85,12 +82,12 @@ class CrossAttention(nn.Module):
 
     # implement KV cache
     # CA is elegant guiding as a function of Kinematics - doesn't seem to work the best
-    def forward(self, x,k_embed,attn_mask,key_padding_mask=None,need_weights=False):
+    def forward(self, x,t_embed,attn_mask,key_padding_mask=None,need_weights=False):
         batch_size, seq_len, embed_dim = x.shape
 
-        q, k, v = self.q_proj(k_embed),self.k_proj(x),self.v_proj(x)
+        q, k, v = self.q_proj(t_embed),self.k_proj(x),self.v_proj(x)
 
-        # Treat soft(qk)v - query from kinematics to x (key) - extract values from x (value)
+        # Treat soft(qk)v - query from time to space (key) - extract values from space (value)
 
         k = k.view(batch_size, seq_len, self.num_heads, self.head_dim)
         v = v.view(batch_size, seq_len, self.num_heads, self.head_dim)
@@ -126,7 +123,7 @@ class CrossAttention(nn.Module):
             return attn_output,None
 
 
-class TransformerBlock(nn.Module):
+class CATransformerBlock(nn.Module):
     def __init__(self,embed_dim,num_heads, mlp_scale : int = 2,drop_rate: float = 0.0, device='cuda'):
         super().__init__()
         self.embed_dim = embed_dim
@@ -138,7 +135,7 @@ class TransformerBlock(nn.Module):
         print("MLP Scale: ",self.mlp_scale)
         # top down layers
         self.xN = nn.LayerNorm(self.embed_dim)
-        self.kN = nn.LayerNorm(self.embed_dim)
+        self.tN = nn.LayerNorm(self.embed_dim)
         self.attn = CrossAttention(self.embed_dim, self.num_heads, dropout=self.drop_rate,device=self.device)
         self.c_proj = nn.Linear(self.embed_dim,self.embed_dim)
         self.LN2 = nn.LayerNorm(self.embed_dim)
@@ -148,18 +145,59 @@ class TransformerBlock(nn.Module):
     def generate_mask(self,seq_len):
         return torch.triu(torch.ones((seq_len, seq_len), device=self.device, dtype=torch.bool), diagonal=1)
 
-    def forward(self,x,k_embed,padding_mask=None,need_weights=False,classification=False):
+    def forward(self,x,t_embed,padding_mask=None,need_weights=False,classification=False):
         B,N_t,t_dim = x.shape
         x_norm = self.xN(x)
-        k_norm = self.kN(k_embed)
+        t_norm = self.tN(t_embed)
 
         if not classification:
             mask_ = self.generate_mask(N_t)
-            attn,attn_weights = self.attn(x_norm, k_norm, attn_mask=mask_,key_padding_mask=padding_mask,need_weights=False)
+            attn,attn_weights = self.attn(x_norm, t_norm, attn_mask=mask_,key_padding_mask=padding_mask,need_weights=False)
         else:
-            attn,attn_weights = self.attn(x_norm, k_norm,key_padding_mask=padding_mask,need_weights=False)
+            attn,attn_weights = self.attn(x_norm, t_norm,key_padding_mask=padding_mask,need_weights=False)
 
         attn = self.c_proj(attn)
+        x = x + attn
+        x = x + self.FF(self.LN2(x))
+        return x
+
+
+class TransformerBlock(nn.Module):
+    def __init__(self,embed_dim,num_heads, mlp_scale : int = 2,drop_rate: float = 0., device='cuda'):
+        super().__init__()
+        
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.device = device
+        self.mlp_scale = mlp_scale 
+        self.drop_rate = drop_rate
+        print("MHSA Drop Rate: ",self.drop_rate)
+        print("MHSA MLP Scale: ",self.mlp_scale)
+        self.LN1 = nn.LayerNorm(self.embed_dim)
+        self.attn = nn.MultiheadAttention(self.embed_dim, self.num_heads, dropout=self.drop_rate, batch_first=True,device=self.device)
+        self.c_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=False)
+        self.LN2 = nn.LayerNorm(self.embed_dim)
+        self.FF = FF(self.embed_dim,mlp_scale=self.mlp_scale)
+
+
+    def generate_mask(self,seq_len):
+        return torch.triu(torch.ones((seq_len, seq_len), device=self.device, dtype=torch.bool), diagonal=1)
+
+    def forward(self, x,padding_mask=None,need_weights=False,classification=False):
+        B,N_t,t_dim = x.shape
+        x_norm = self.LN1(x)
+
+        # need_weights false - scaled dot producted attention from torch - faster
+        # update to sdpa directly - fastest
+        # add KV caching
+        if not classification:
+            mask_ = self.generate_mask(N_t)
+            attn,attn_weights = self.attn(x_norm, x_norm, x_norm, need_weights=need_weights, attn_mask=mask_,key_padding_mask=padding_mask)
+        else:
+            attn,attn_weights = self.attn(x_norm, x_norm, x_norm, need_weights=need_weights,key_padding_mask=padding_mask)
+
+        attn = self.c_proj(attn)
+
         x = x + attn
         x = x + self.FF(self.LN2(x))
         return x
@@ -179,9 +217,12 @@ class Cherenkov_GPT(nn.Module):
         self.detokenize_func = detokenize_func
         self.token_embedding = nn.Embedding(vocab_size, embed_dim)
         self.pos_embedding = nn.Embedding(seq_len, embed_dim)
+        self.time_pos_embedding = nn.Embedding(seq_len,embed_dim)
         self.momentum_embedding = nn.Linear(1,embed_dim) 
         self.theta_embedding = nn.Linear(1,embed_dim)
-        self.layers = nn.ModuleList([TransformerBlock(embed_dim, attn_heads[i],mlp_scale) for i in range(len(attn_heads))])
+        layers_ = [CATransformerBlock(embed_dim, attn_heads[0], mlp_scale)]  
+        layers_ += [TransformerBlock(embed_dim, attn_heads[i], mlp_scale) for i in range(1, len(attn_heads))] 
+        self.layers = nn.ModuleList(layers_)
         self.LN = nn.LayerNorm(embed_dim)
 
         if not self.classification:
@@ -215,35 +256,49 @@ class Cherenkov_GPT(nn.Module):
         pos = torch.arange(0, seq_len, dtype=torch.long, device=x.device).unsqueeze(0)
 
         if self.classification:
+            # Mask output embedding to class head
+            kinematic_mask = torch.zeros(batch_size, k.shape[-1], dtype=torch.bool, device=x.device)  # No masking for kinematic tokens
             classification_mask = ~torch.isin(x, torch.tensor([self.SOS_token,self.EOS_token,self.pad_token],dtype=torch.long,device=x.device))
-
+            classification_mask = torch.cat((kinematic_mask, classification_mask), dim=1) 
 
         if not self.digitize_time:
             t = t.reshape(-1, 1)  # [batch_size * seq_len, 1]
             t_embed_flat = self.time_embedding(t)  # 
             t_embed = t_embed_flat.view(batch_size, seq_len, t_embed_flat.shape[-1]) # [batch_size, seq_len,embed_dim]
-
+            t_embed = t_embed + self.time_pos_embedding(pos)
         else:
-            t_embed = self.time_embedding(t)
+            t_embed = self.time_embedding(t) + self.time_pos_embedding(pos)
 
+        momentum = k[:,0].unsqueeze(-1)
+        theta = k[:,1].unsqueeze(-1)
+        p_embed = self.momentum_embedding(momentum).unsqueeze(1)  
+        theta_embed = self.theta_embedding(theta).unsqueeze(1)  
 
-        k_embed = self.momentum_embedding(k[:,0].unsqueeze(-1)) + self.theta_embedding(k[:,1].unsqueeze(-1))
-        k_embed = k_embed.unsqueeze(1).repeat(1, seq_len, 1)
-        x = self.token_embedding(x) + t_embed + self.pos_embedding(pos) 
+        x = self.token_embedding(x) + self.pos_embedding(pos) 
+        t_embed = torch.cat((p_embed,theta_embed,t_embed),dim=1)
+        x = torch.cat((p_embed, theta_embed, x), dim=1) 
+
+        # Instead of adding time and position embeddings, combine through Cross attention
+        # Query from pixel space, given time (key,value) - works quite well
+
+        if padding_mask is not None:
+            kinematic_mask = torch.zeros(batch_size, k.shape[-1], dtype=torch.bool, device=x.device)  # No masking for kinematic tokens
+            padding_mask = torch.cat((kinematic_mask, padding_mask), dim=1) 
 
             
-        for layer in self.layers:
-            x = layer(x,k_embed,padding_mask=padding_mask,classification=self.classification)
+        x = self.layers[0](x, t_embed,padding_mask=padding_mask,classification=self.classification)
+        for layer in self.layers[1:]:
+            x = layer(x,padding_mask=padding_mask,classification=self.classification)
         
         x = self.LN(x)
  
         if not self.classification: # Generations - next hit prediction
-            pixel = self.logits_head(x)
-
             if not self.digitize_time:
                 t_out = self.time_head(x).squeeze(-1) # direct regression of time - subject to mode collapse
             else:
                 t_out = self.time_head(x) # logits over time 
+
+            pixel = self.logits_head(x)
 
             return pixel,t_out
 

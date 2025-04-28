@@ -18,8 +18,8 @@ import matplotlib.colors as mcolors
 from utils.utils import convert_indices,convert_indices_gt
 
 from dataloader.tokenizer import TimeTokenizer
-from models.GPT import Cherenkov_GPT
-#from models.GPT_CA import Cherenkov_GPT
+#from models.GPT import Cherenkov_GPT
+from models.GPT_CA import Cherenkov_GPT
 
 warnings.filterwarnings("ignore", message=".*weights_only.*")
 

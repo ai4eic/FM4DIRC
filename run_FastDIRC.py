@@ -311,10 +311,10 @@ def main(config,args):
             fs_pions = []
             start = time.time()
 
-            pion_pix,pion_t = pion_net.generate_PDF(k,numTracks=args.fs_support,temperature=1.)
+            pion_pix,pion_t = pion_net.generate_PDF(k,numTracks=args.fs_support)
             fs_pions = convert_pmt_pix(pion_pix,pion_t)
             del pion_pix,pion_t
-            kaon_pix,kaon_t = kaon_net.generate_PDF(k,numTracks=args.fs_support,temperature=1.)
+            kaon_pix,kaon_t = kaon_net.generate_PDF(k,numTracks=args.fs_support)
             fs_kaons = convert_pmt_pix(kaon_pix,kaon_t)
             del kaon_pix,kaon_t
 

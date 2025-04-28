@@ -5,7 +5,7 @@ momentum=6
 temperature=1.0
 sampling="Default"
 topK=3000
-np=0.975
+np=0.98
 config_file="config/CA_config.json"
 
 output_dir=$(python -c "

@@ -1,5 +1,6 @@
-
 import math
+import pkbar
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -310,8 +311,8 @@ class Cherenkov_GPT(nn.Module):
 
     @torch.no_grad()
     def generate_PDF(self,kinematics, numTracks=2e4,max_seq_len: int = 250,
-                 context_len: int = 250, temperature: float = 1.0, 
-                 method="Nucleus",topK=100,nucleus_p=0.975):
+                 context_len: int = 250, temperature: float = 1.1, 
+                 method="Nucleus",topK=100,nucleus_p=0.98):
 
         assert kinematics is not None
 
