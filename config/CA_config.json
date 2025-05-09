@@ -1,7 +1,9 @@
 {
-    "name": "Pion_GPT_DigitizeTime",
+    "name": "FineTuneTest_Pion_6GeV",
     "seed": 752022,
     "run_val": 1,
+    "sim_type": "pgun",  
+    "datatype": "Simulation", 
     "data_type": "Pions",
     "digitize_time": 1,
     "stats": {
@@ -17,18 +19,37 @@
         "theta_min": 25.0,
         "time_res": 0.025
     },
+    "stats_NF": {
+        "x_max": 350.0,
+        "x_min": 2.0,
+        "y_max": 230.1,
+        "y_min": 2.0,
+        "time_max": 157.0,
+        "time_min": 0.0,
+        "P_max": 10.0,
+        "P_min": 0.5,
+        "theta_max": 160.0,
+        "theta_min": 25.0
+    },
+    "model_NF": {
+        "num_layers": 20,
+        "input_shape": 3,
+        "cond_shape": 2,
+        "num_blocks": 2,
+        "hidden_nodes": 128
+    },
     "model": {
         "vocab_size": 6147,
         "time_vocab": 5923,
         "embed_dim": 256,
-        "drop_rate": 0.0,
         "attn_heads": [8,8,8],
         "num_blocks": 2,
         "kin_size": 2,
         "hidden_units": 128,
         "mlp_scale": 2,
         "use_kinematics": 0,
-        "max_seq_length": 250
+        "max_seq_length": 250,
+        "drop_rates": [0.0,0.0,0.0]
     },
     "special_tokens":{
         "pad_token": 6146,
@@ -40,7 +61,7 @@
     "dataset": {
         "fixed_point_fs": {
             "data_path_3GeV": "../Cherenkov_FastSim/Generations/NF_New_Prior_3GeV",
-            "data_path_6GeV": "../Cherenkov_FastSim/Generations/NF_FixedPoint_6GeV",
+            "data_path_6GeV": "Generations/QKNorm_EpochFinal_PrependKinematics_TimeeStop_DynamicExpMin95",
             "data_path_9GeV": "../Cherenkov_FastSim/Generations/NF_New_Prior_9GeV",
             "data_path_full": "../Cherenkov_FastSim/Generations/NF_FullPhaseSpace_NOPhotonSampling"
         },
@@ -50,8 +71,8 @@
             "data_path_3GeV": "../Cherenkov_FastSim/data/TimeImaging_3GeV/Combined_pik_3GeV_TimeImaging_PiK.pkl"
         },
         "fixed_point": {
-            "pion_data_path_6GeV": "../Cherenkov_FastSim/data/6GeV_setP_Jan27/merged_pik_6GeV_Pions.pkl",
-            "kaon_data_path_6GeV": "../Cherenkov_FastSim/data/6GeV_setP_Jan27/merged_pik_6GeV_Kaons.pkl",
+            "pion_data_path_6GeV": "data/6GeV_setP_Jan27/merged_pik_6GeV_Pions.pkl",
+            "kaon_data_path_6GeV": "data/6GeV_setP_Jan27/merged_pik_6GeV_Kaons.pkl",
             "pion_data_path_9GeV": "../Cherenkov_FastSim/data/9GeV_setP_Jan27/merged_pik_9GeV_Pions.pkl",
             "kaon_data_path_9GeV": "../Cherenkov_FastSim/data/9GeV_setP_Jan27/merged_pik_9GeV_Kaons.pkl",
             "pion_data_path_3GeV": "../Cherenkov_FastSim/data/3GeV_setP_Jan27/merged_pik_3GeV_Pions.pkl",
@@ -108,7 +129,8 @@
         },
         "test": {
             "batch_size": 25,
-            "num_workers": 0
+            "num_workers": 0,
+            "batch_size_DLL": 25
         }
     },
     "output": {
@@ -116,21 +138,15 @@
     },
     "Inference": {
         "batch_size": 35,
-        "pion_model_path_MHSA": "Trained_Models/MHSA/Pion_GPT_attn888_256Embed_5923TimeVocab_MHSA_CORRECTED___Apr-25-2025/Pion_GPT_attn888_256Embed_5923TimeVocab_MHSA_CORRECTED_epoch20_val_loss_9.475870.pth",
-        "kaon_model_path_MHSA": "Trained_Models/MHSA/Kaon_GPT_attn888_256Embed_5923TimeVocab_MHSA_CORRECTED___Apr-25-2025/Kaon_GPT_attn888_256Embed_5923TimeVocab_MHSA_CORRECTED_epoch21_val_loss_9.518023.pth",
-        "pion_model_path": "Trained_Models/CrossAttention/Pion_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_MHSA_Combined___Apr-27-2025/Pion_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_MHSA_Combined_epoch02_val_loss_9.555637.pth",
-        "kaon_model_path": "Trained_Models/CrossAttention/Kaon_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_MHSA_Combined___Apr-27-2025/Kaon_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_MHSA_Combined_epoch02_val_loss_9.613039.pth",
-        "full_phase_space_dir": "NF_FullPhaseSpace_NOPhotonSampling",
-        "fixed_point_dir": "CA_MHSA_Combined_Epoch2_Default",
-        "out_dir_fixed": "Inference/TEST_GPT_IncreasedTimeVocab_KWeights",
+        "pion_model_path": "Trained_Models/CrossAttention/Pion_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_CustomMHSA_QKNorm_Combined___Apr-29-2025/Pion_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_CustomMHSA_QKNorm_Combined_epoch96_val_loss_9.459465.pth",
+        "kaon_model_path": "Trained_Models/CrossAttention/Kaon_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_CustomMHSA_QKNorm_Combined___Apr-29-2025/Kaon_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_CustomMHSA_QKNorm_Combined_epoch97_val_loss_9.499614.pth",
+        "full_phase_space_dir": "CA_MHSA_Combined_QK_Norm_Epoch16_Default_AMP_3GeV",
+        "fixed_point_dir": "QKNorm_EpochFinal_PrependKinematics_OrStop_Nucleus995_Temp105",
+        "out_dir_fixed": "Gen_Eval/QKNorm_Epoch89_PrependKinematics_DoubleStop_Default",
         "out_dir_cont": "Inference/NF_FastSimulated_FPS_PhotonSampling",
-        "time_imaging_dir": "FlowMatching_TimeImaging_6GeV",
-        "KDE_dir": "KDE_Fits/6.0/MHSA_Correct_Epoch20_Nucleus0.98_Temp1.1"
-    },
-    "Photon_Sampler": {
-        "Pion_dataset": "data/Pion_Hits_Dataset.pkl",
-        "Kaon_dataset": "data/Kaon_Hits_Dataset.pkl",
-        "Pion_LUT_path": "Photon_Yield/Pion_Photon_Yield.pkl",
-        "Kaon_LUT_path": "Photon_Yield/Kaon_Photon_Yield.pkl"
+        "time_imaging_dir": "CA_MHSA_Combined_QK_Norm_Epoch16_Nucleus0.99s_AMP_6GeV",
+        "KDE_dir": "KDE_Fits/6.0/QKNorm_EpochFinal_PrependKinematics_OrStop_Nucleus995_Temp105_800kPhotons",
+        "pion_model_path_NF": "../Cherenkov_FastSim/Trained_Models/Pion_NF_Model.pth",
+        "kaon_model_path_NF": "../Cherenkov_FastSim/Trained_Models/Kaon_NF_Model.pth"
     }
 }

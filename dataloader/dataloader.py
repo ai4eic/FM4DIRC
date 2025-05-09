@@ -4,6 +4,26 @@ import numpy as np
 import torch
 
 
+def Inference_collate(batch):
+    hits = []
+    conditions = []
+    PIDs = []
+    unscaled = []
+    n_hits = []
+    LL_ks = []
+    LL_pis = []
+    for h,cond,PID,nh,u,LL_k,LL_pi in batch:
+        hits.append(torch.tensor(h))
+        conditions.append(torch.tensor(cond))
+        PIDs.append(torch.tensor(PID))
+        n_hits.append(torch.tensor(nh))
+        unscaled.append(torch.tensor(u))
+        LL_ks.append(torch.tensor(LL_k))
+        LL_pis.append(torch.tensor(LL_pi))
+
+    return torch.stack(hits),torch.stack(conditions),torch.tensor(PIDs),torch.tensor(n_hits),torch.stack(unscaled),torch.tensor(LL_ks),torch.tensor(LL_pis)
+
+
 def DIRC_collate(batch):
     spatial_tokens = []
     time_values = []
@@ -66,3 +86,17 @@ def InferenceLoader(test_dataset,config):
                             batch_size=config['dataloader']['test']['batch_size'],
                             shuffle=False,collate_fn=DIRC_collate_classification,num_workers=0,
                             pin_memory=False)
+
+
+def CreateInferenceLoaderDLL(test_dataset,config):
+    test_loader =  DataLoader(test_dataset,
+                            batch_size=config['dataloader']['test']['batch_size_DLL'],
+                            shuffle=False,collate_fn=DLL_Inference_collate,num_workers=0)
+    return test_loader    
+
+# Create dataloaders to iterate.
+def CreateInferenceLoader(test_dataset,config):
+    test_loader =  DataLoader(test_dataset,
+                            batch_size=config['dataloader']['test']['batch_size'],
+                            shuffle=False,collate_fn=Inference_collate,num_workers=0)
+    return test_loader                     

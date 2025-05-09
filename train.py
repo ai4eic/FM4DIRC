@@ -22,8 +22,7 @@ from dataloader.dataset import DIRC_Dataset
 from dataloader.tokenizer import TimeTokenizer
 from dataloader.dataloader import CreateLoaders
 
-#from models.GPT import Cherenkov_GPT
-from models.GPT_CA import Cherenkov_GPT
+from models.GPT import Cherenkov_GPT
 
 def main(config,resume,distributed):
 
@@ -196,13 +195,6 @@ def main(config,resume,distributed):
 
             next_times = times[:, 1:].clone()   
             times = times[:, :-1]
-
-        
-            # print('-------------------------')
-            # print(tokens.max(dim=1)[0])
-            # print(times.max(dim=1)[0])
-            # print('-------------------------')
-            # exit()
             
             k  = data[2].to('cuda').float()
 
@@ -213,10 +205,9 @@ def main(config,resume,distributed):
             with torch.set_grad_enabled(True):
                 logits,t = net(tokens,times,k,padding_mask=padding_mask)
 
-            # Include for MHSA with guide
-            # Exclude for CA
-            # logits = logits[:,k.shape[1]:,:]
-            # t = t[:,k.shape[1]:,:]
+
+            logits = logits[:,k.shape[1]:,:]
+            t = t[:,k.shape[1]:,:]
 
             pixel_loss = loss_fn(logits.reshape(-1, logits.size(-1)), next_tokens.reshape(-1))
 
@@ -273,11 +264,8 @@ def main(config,resume,distributed):
                 with torch.no_grad():
                     logits,t = net(tokens,times,k,padding_mask=padding_mask)
 
-                # Include for MHSA with guide
-                # Exclude for CA
-                # logits = logits[:,k.shape[1]:,:]
-                # t = t[:,k.shape[1]:,:]
-
+                logits = logits[:,k.shape[1]:,:]
+                t = t[:,k.shape[1]:,:]
 
                 if not digitize_time:
                     regression_mask = ~torch.isin(next_tokens,torch.tensor([pad_token, SOS_token,EOS_token], device=next_tokens.device))

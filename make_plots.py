@@ -13,6 +13,7 @@ import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 from pdf2image import convert_from_path 
 from utils.utils_hpDIRC import bins_x,bins_y,gapx,gapy,pixel_width,pixel_height
+from utils.utils import convert_indices_gt
 
 t_bins = np.arange(9.0,157.0,0.5)
 
@@ -41,13 +42,8 @@ def photon_yield_plots(path_,label,momentum,outpath):
         file_path = os.path.join(path_,file)
         data = np.load(file_path,allow_pickle=True)
 
-        fastsim = data['GPT']
-        xs = fastsim[:,0]
-        GT = data['GT']
-        true_xs = GT[:,0]
-
-        fastsim_yields[str(theta)] = len(xs)
-        ground_truth_yields[str(theta)] = len(true_xs)
+        fastsim_yields[str(theta)] = data['FastSimPhotons']
+        ground_truth_yields[str(theta)] = data['TruePhotons']
 
     if file_counter == 0:
         print("No files found for ",label, ". Exiting.")
@@ -82,12 +78,31 @@ def photon_yield_plots(path_,label,momentum,outpath):
 
 def make_plots_fastsim(file_path,label,momentum,theta,outpath,filename,log_norm=True):
     data = np.load(file_path,allow_pickle=True)
+    xs = []
+    ys = []
+    time = []
+    true_xs = []
+    true_ys = []
+    true_time = []
 
-    fastsim = data['GPT']
-    xs,ys,time = fastsim[:,0],fastsim[:,1],fastsim[:,2]
-    GT = data['GT']
-    true_xs,true_ys,true_time = GT[:,0],GT[:,1],GT[:,2]
-
+    itter = len(data['fast_sim']) if len(data['fast_sim']) < len(data['truth']) else len(data['truth'])
+     
+    for i in range(itter):
+        xs.append(data['fast_sim'][i]['x'])
+        ys.append(data['fast_sim'][i]['y'])
+        time.append(data['fast_sim'][i]['leadTime'])
+        x_,y_ = convert_indices_gt(data['truth'][i]['pmtID'],data['truth'][i]['pixelID'])
+        true_xs.append(x_)
+        true_ys.append(y_)
+        true_time.append(data['truth'][i]['leadTime'])
+    
+    xs = np.concatenate(xs).astype('float32')
+    ys = np.concatenate(ys).astype('float32')
+    time = np.concatenate(time)
+    true_xs = np.concatenate(true_xs).astype('float32')
+    true_ys = np.concatenate(true_ys).astype('float32')
+    true_time = np.concatenate(true_time) 
+    true_time += + np.random.normal(0,0.1,size=true_time.shape)
 
     if log_norm:
         norm = LogNorm()
@@ -238,18 +253,17 @@ def make_ratios(path_,label,momentum,outpath):
 
         file_path = os.path.join(path_,file)
         data = np.load(file_path,allow_pickle=True)
+ 
+        itter = len(data['fast_sim']) if len(data['fast_sim']) < len(data['truth']) else len(data['truth'])
 
-        fastsim = data['GPT']
-        xs,ys,time = fastsim[:,0],fastsim[:,1],fastsim[:,2]
-        GT = data['GT']
-        true_xs,true_ys,true_time = GT[:,0],GT[:,1],GT[:,2]
-
-        x.append(xs)
-        y.append(ys)
-        t.append(time)
-        x_true.append(true_xs)
-        y_true.append(true_ys)
-        t_true.append(true_time)
+        for i in range(itter):
+            x.append(data['fast_sim'][i]['x'])
+            y.append(data['fast_sim'][i]['y'])
+            t.append(data['fast_sim'][i]['leadTime'])
+            x_,y_ = convert_indices_gt(data['truth'][i]['pmtID'],data['truth'][i]['pixelID'])
+            x_true.append(x_)
+            y_true.append(y_)
+            t_true.append(data['truth'][i]['leadTime'])
     
     if file_counter == 0:
         print("No files found for ",label, ". Exiting.")
@@ -262,11 +276,10 @@ def make_ratios(path_,label,momentum,outpath):
     t = np.concatenate(t)
     x_true = np.concatenate(x_true)
     y_true = np.concatenate(y_true)
-    t_true = np.concatenate(t_true)
-
+    t_true = np.concatenate(t_true) 
+    t_true += + np.random.normal(0,0.1,size=t_true.shape)
     #print("FastSim Size: ",len(x)," GT Size: ",len(x_true))
 
-    
     fig, ax = plt.subplots(2, 3, figsize=(18, 8), gridspec_kw={'height_ratios': [4, 1]}, sharex='col',sharey='row')
     ax = ax.ravel()
 

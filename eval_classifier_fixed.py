@@ -326,13 +326,13 @@ def main(config,args):
         vocab_size = config['model']['vocab_size']
         time_vocab = config['model']['time_vocab']
         embed_dim = config['model']['embed_dim']
-        drop_rate = config['model']['drop_rate']
         attn_heads = config['model']['attn_heads']
         num_blocks = config['model']['num_blocks']
         kin_size = config['model']['kin_size']
         hidden_units = config['model']['hidden_units']
         mlp_scale = config['model']['mlp_scale']
         msl = config['model']['max_seq_length']
+        drop_rates = config['model']['drop_rates']
 
         # Time tokenization
         digitize_time = bool(config['digitize_time'])
@@ -369,7 +369,7 @@ def main(config,args):
 
         net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
                             num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,
-                            mlp_scale=mlp_scale,classification=True,time_vocab=time_vocab)
+                            mlp_scale=mlp_scale,classification=True,time_vocab=time_vocab,drop_rates=drop_rates)
 
         net.to('cuda')
         model_path = config['Inference']['classifier_path']

@@ -18,13 +18,10 @@ from dataloader.dataloader import CreateLoaders
 
 from dataloader.tokenizer import TimeTokenizer
 from models.GPT import Cherenkov_GPT
-#from models.CA_GPT import Cherenkov_GPT
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.colors as mcolors
-
-from cuml.neighbors import KernelDensity
 import cupy as cp
 from utils.utils import convert_pmt_pix
 from utils.KDE_utils import perform_fit_KDE,gaussian_normalized,gaussian_unnormalized,plot,FastDIRC
@@ -59,7 +56,7 @@ def add_dark_noise(hits,dark_noise_pmt=28000):
     return hits
 
 
-def create_supports_geant(pions,kaons):
+def create_supports_geant(pions,kaons,num_support=200000):
     pmtID = np.concatenate([pion['pmtID'] for pion in pions])
     pixelID = np.concatenate([pion['pixelID'] for pion in pions])
     t = np.concatenate([pion['leadTime'] for pion in pions])
@@ -80,28 +77,19 @@ def create_supports_geant(pions,kaons):
     y = 2 + row * pixel_height + (pmtID // 6) * gapy + (pixel_height) / 2. # Center at middle
     support_kaons = np.vstack((x, y,t)).T  
 
-    return support_pions[np.where((support_pions[:,2] < 100.0) & (support_pions[:,2] > 10.0))[0]],support_kaons[np.where((support_kaons[:,2] < 100.0) & (support_kaons[:,2] > 10.0))[0]]
+    support_pions,support_kaons =  support_pions[np.where((support_pions[:,2] < 100.0) & (support_pions[:,2] > 10.0))[0]],support_kaons[np.where((support_kaons[:,2] < 100.0) & (support_kaons[:,2] > 10.0))[0]]
+    return support_pions[:num_support],support_kaons[:num_support]
 
 
 def create_supports_fs(pions,kaons):
-    pmtID = pions['pmtID']
-    pixelID = pions['pixelID']
+    x = pions['x']
+    y = pions['y']
     t = pions['leadTime']
-
-    row = (pmtID//6) * 16 + pixelID//16 
-    col = (pmtID%6) * 16 + pixelID%16
-    x = 2 + col * pixel_width + (pmtID % 6) * gapx + (pixel_width) / 2. # Center at middle
-    y = 2 + row * pixel_height + (pmtID // 6) * gapy + (pixel_height) / 2. # Center at middle
     support_pions = np.vstack((x, y,t)).T
 
-    pmtID = kaons['pmtID']
-    pixelID = kaons['pixelID']
+    x = kaons['x']
+    y = kaons['y']
     t = kaons['leadTime']
-
-    row = (pmtID//6) * 16 + pixelID//16 
-    col = (pmtID%6) * 16 + pixelID%16
-    x = 2 + col * pixel_width + (pmtID % 6) * gapx + (pixel_width) / 2. # Center at middle
-    y = 2 + row * pixel_height + (pmtID // 6) * gapy + (pixel_height) / 2. # Center at middle
     support_kaons = np.vstack((x, y,t)).T  
 
     return support_pions[np.where((support_pions[:,2] < 100.0) & (support_pions[:,2] > 10.0))[0]],support_kaons[np.where((support_kaons[:,2] < 100.0) & (support_kaons[:,2] > 10.0))[0]]
@@ -146,7 +134,9 @@ def inference(tracks,dirc_obj,support_kaons,support_pions,add_dn=False):
 def main(config,args):
 
     # Setup random seed
+    #seed = int(time.time())
     seed = config['seed']
+    print("Seed: ",seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
@@ -155,8 +145,8 @@ def main(config,args):
     gpu_mem = gpu_mem / (1024 ** 3) # GB
 
     print("---------------- PDF Stats ------------------")
-    print("Fast Simulated Support Tracks: ",args.fs_support)
-    print("Geant4 Support Tracks: ",args.geant_support)
+    print("Fast Simulated Support photons: ",args.fs_support)
+    print("Geant4 Support photons: ",args.geant_support)
     print("---------------------------------------------")
     device = torch.device('cuda')
 
@@ -164,13 +154,13 @@ def main(config,args):
     vocab_size = config['model']['vocab_size']
     time_vocab = config['model']['time_vocab']
     embed_dim = config['model']['embed_dim']
-    drop_rate = config['model']['drop_rate']
     attn_heads = config['model']['attn_heads']
     num_blocks = config['model']['num_blocks']
     kin_size = config['model']['kin_size']
     hidden_units = config['model']['hidden_units']
     mlp_scale = config['model']['mlp_scale']
     msl = config['model']['max_seq_length']
+    drop_rates = config['model']['drop_rates']
 
     # data params
     inference_batch = config['Inference']['batch_size']
@@ -196,7 +186,7 @@ def main(config,args):
 
     dicte = torch.load(config['Inference']['pion_model_path'])
     pion_net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,detokenize_func=de_tokenize_func)
+                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,drop_rates=drop_rates,detokenize_func=de_tokenize_func)
     pion_net.to('cuda')
     pion_net.load_state_dict(dicte['net_state_dict'])
     pion_net.eval()
@@ -204,7 +194,7 @@ def main(config,args):
 
     dicte = torch.load(config['Inference']['kaon_model_path'])
     kaon_net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,detokenize_func=de_tokenize_func)
+                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,drop_rates=drop_rates,detokenize_func=de_tokenize_func)
     kaon_net.to('cuda')
     kaon_net.load_state_dict(dicte['net_state_dict'])
     kaon_net.eval()
@@ -256,12 +246,14 @@ def main(config,args):
         inference_kaons = []
 
 
+        nhit_k = 0
+        nhit_p = 0
         for i in range(len(geant)):
             if (geant[i]['Theta'] == theta_) and (geant[i]['P'] == args.momentum) and (geant[i]['Phi'] == 0.0) and (geant[i]['NHits'] < 250) and (geant[i]['NHits'] > 5):
                 PDG = geant[i]['PDG']
-                if PDG == 321 and len(geant_support_kaons) < args.geant_support:
+                if PDG == 321:
                     geant_support_kaons.append(geant[i])
-                elif PDG == 211 and len(geant_support_pions) < args.geant_support:
+                elif PDG == 211:
                     geant_support_pions.append(geant[i])
                 else:
                     pass
@@ -273,29 +265,9 @@ def main(config,args):
             if (inference_datapoints[i]['Theta'] == theta_) and (inference_datapoints[i]['P'] == args.momentum) and (inference_datapoints[i]['Phi'] == 0.0) and (inference_datapoints[i]['NHits'] < 250) and (inference_datapoints[i]['NHits'] > 5):
                 PDG = inference_datapoints[i]['PDG']
                 if PDG == 321:
-                    if not args.fs_inference:
-                        inference_kaons.append(inference_datapoints[i])
-                    else:
-                        with torch.no_grad():
-                            p = 2*(inference_datapoints[i]['P'] - stats['P_min'])  / (stats['P_max'] - stats['P_min']) - 1.0
-                            theta = 2*(inference_datapoints[i]['Theta'] - stats['theta_min']) / (stats['theta_max'] - stats['theta_min']) - 1.0
-                            k = torch.tensor(np.array([p,theta])).to('cuda').float().unsqueeze(0)
-                            nhits = inference_datapoints[i]['NHits']
-                            inf_k_ = kaon_net.create_tracks(num_samples=nhits,context=k,fine_grained_prior=args.fine_grained_prior)
-                        inference_kaons.append(inf_k_)
+                    inference_kaons.append(inference_datapoints[i])
                 elif PDG == 211:
-                    if not args.fs_inference:
-                        inference_pions.append(inference_datapoints[i])
-                    else:
-                        with torch.no_grad():
-                            p = 2*(inference_datapoints[i]['P'] - stats['P_min'])  / (stats['P_max'] - stats['P_min']) - 1.0
-                            theta = 2*(inference_datapoints[i]['Theta'] - stats['theta_min']) / (stats['theta_max'] - stats['theta_min']) - 1.0
-                            k = torch.tensor(np.array([p,theta])).to('cuda').float().unsqueeze(0)
-                            nhits = inference_datapoints[i]['NHits']
-                            inf_p_ = pion_net.create_tracks(num_samples=nhits,context=k,fine_grained_prior=args.fine_grained_prior)
-                        inference_pions.append(inf_p_)
-                else:
-                    pass
+                    inference_pions.append(inference_datapoints[i])
 
 
         torch.cuda.empty_cache()
@@ -305,20 +277,15 @@ def main(config,args):
         with torch.set_grad_enabled(False):
             k = np.array([args.momentum,theta_])
             k = 2*(k - conditional_mins) / (conditional_maxes - conditional_mins) - 1.0
+            k_unscaled = k.copy()
             k = torch.tensor(k).to('cuda').float().unsqueeze(0).repeat(inference_batch, 1)
             
             fs_kaons = []
             fs_pions = []
             start = time.time()
-
-            pion_pix,pion_t = pion_net.generate_PDF(k,numTracks=args.fs_support)
-            fs_pions = convert_pmt_pix(pion_pix,pion_t)
-            del pion_pix,pion_t
-            kaon_pix,kaon_t = kaon_net.generate_PDF(k,numTracks=args.fs_support)
-            fs_kaons = convert_pmt_pix(kaon_pix,kaon_t)
-            del kaon_pix,kaon_t
-
-        end = time.time()
+            fs_pions = pion_net.generate_PDF(k,k_unscaled,numPhotons=args.fs_support)
+            fs_kaons = kaon_net.generate_PDF(k,k_unscaled,numPhotons=args.fs_support)
+            end = time.time()
 
         print(" ")
         support_pions,support_kaons = create_supports_fs(fs_pions,fs_kaons)
@@ -360,6 +327,7 @@ def main(config,args):
         DLL_k = DLL_k[~np.isinf(DLL_k)].astype('float32')
         DLL_p = DLL_p[~np.isinf(DLL_p)].astype('float32')
         fit_params = perform_fit_KDE(DLL_k,DLL_p,bins=200,normalized=False,momentum=args.momentum)
+        #fit_params = {}
         plot(fit_params,DLL_p,DLL_k,"Fast Sim.",out_folder,theta_,pdf_method="Fast Sim.",bins=200,momentum=args.momentum)
         del support_pions,support_kaons
         sigma_dict_fs[theta_] = [fit_params[2],fit_params[-2]]
@@ -374,7 +342,7 @@ def main(config,args):
         
 
         print("------------------- Geant4 ---------------------")
-        support_pions,support_kaons = create_supports_geant(geant_support_pions,geant_support_kaons)
+        support_pions,support_kaons = create_supports_geant(geant_support_pions,geant_support_kaons,num_support=args.geant_support)
         print("Number of pions: ",len(support_pions)," Number of Kaons: ",len(support_kaons))
         np.save(os.path.join(out_folder,f"Geant_SupportPions_{theta_}.npy"),support_pions)
         np.save(os.path.join(out_folder,f"Geant_SupportKaons_{theta_}.npy"),support_kaons)
@@ -407,6 +375,7 @@ def main(config,args):
         DLL_k = DLL_k[~np.isinf(DLL_k)].astype('float32')
         DLL_p = DLL_p[~np.isinf(DLL_p)].astype('float32')
         fit_params = perform_fit_KDE(DLL_k,DLL_p,bins=200,normalized=False,momentum=args.momentum)
+        #fit_params = {}
         plot(fit_params,DLL_p,DLL_k,"Geant4",out_folder,theta_,pdf_method="Geant4",bins=200,momentum=args.momentum)
         print("\n")
         del support_pions,support_kaons
@@ -433,9 +402,8 @@ if __name__=='__main__':
     parser.add_argument('-c', '--config', default='config.json',type=str,
                         help='Path to the config file (default: config.json)')
     parser.add_argument('-p', '--momentum', default=6.0,type=float,help='Particle Momentum.')
-    parser.add_argument('-fs','--fs_support', default=1000,type=int,help='Number of Fast Simulated support tracks.')
-    parser.add_argument('-fg','--geant_support', default=1000,type=int,help='Number of Geant4 support tracks.')
-    parser.add_argument('-fsi','--fs_inference',action='store_true',help="Use Fast Simulated tracks for inference as opposed to Geant4 (default).")
+    parser.add_argument('-fs','--fs_support', default=500000,type=int,help='Number of Fast Simulated support photons.')
+    parser.add_argument('-fg','--geant_support', default=500000,type=int,help='Number of Geant4 support photons.')
     parser.add_argument('-dn', '--dark_noise',action='store_true',help="Add dark noise to inference tracks.")
     args = parser.parse_args()
 

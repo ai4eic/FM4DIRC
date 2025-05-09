@@ -15,11 +15,10 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.colors as mcolors
 
-from utils.utils import convert_indices,convert_indices_gt
+from utils.utils import convert_indices,convert_indices_gt,dynamic_batch
 
 from dataloader.tokenizer import TimeTokenizer
-#from models.GPT import Cherenkov_GPT
-from models.GPT_CA import Cherenkov_GPT
+from models.GPT import Cherenkov_GPT
 
 warnings.filterwarnings("ignore", message=".*weights_only.*")
 
@@ -32,32 +31,37 @@ def main(config,args):
     random.seed(seed)
     torch.cuda.manual_seed(seed)
 
+    gpu_mem, _ = torch.cuda.mem_get_info()
+    gpu_mem = gpu_mem / (1024 ** 3) # GB
+
     config['method'] = args.method
 
     if config['method'] == "Pion":
         print("Generating for pions.")
         dicte = torch.load(config['Inference']['pion_model_path'])
+        print(config['Inference']['pion_model_path'])
         PID = 211
     elif config['method'] == 'Kaon':
         print("Generation for kaons.")
         dicte = torch.load(config['Inference']['kaon_model_path'])
+        print(config['Inference']['kaon_model_path'])
         PID = 321
     else:
         print("Specify particle to generate in config file")
         exit()
 
+
     # Model params.
     vocab_size = config['model']['vocab_size']
     time_vocab = config['model']['time_vocab']
     embed_dim = config['model']['embed_dim']
-    drop_rate = config['model']['drop_rate']
     attn_heads = config['model']['attn_heads']
     num_blocks = config['model']['num_blocks']
     kin_size = config['model']['kin_size']
     hidden_units = config['model']['hidden_units']
     mlp_scale = config['model']['mlp_scale']
     msl = config['model']['max_seq_length']
-
+    drop_rates = config['model']['drop_rates']
     # data params
     inference_batch = config['Inference']['batch_size']
     stats = config['stats']
@@ -83,10 +87,10 @@ def main(config,args):
 
     if not args.distributed:
         net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,detokenize_func=de_tokenize_func)
+                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,detokenize_func=de_tokenize_func,drop_rates=drop_rates)
     else:
         net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                num_blocks=num_blocks,hidden_units=hidden_units,use_kinematics=use_kinematics,mlp_scale=mlp_scale)
+                num_blocks=num_blocks,hidden_units=hidden_units,use_kinematics=use_kinematics,mlp_scale=mlp_scale,drop_rates=drop_rates)
         net = DataParallel(net)
 
     t_params = sum(p.numel() for p in net.parameters())
@@ -96,9 +100,11 @@ def main(config,args):
     net.load_state_dict(dicte['net_state_dict'])
     net.eval()
 
+    net = torch.compile(model=net,mode="max-autotune")
+
     for layer_ in net.layers:
         if hasattr(layer_.attn, "g_scale"):
-            print("CrossAttnScale:", layer_.attn.g_scale)
+            print(layer_.attn.__class__.__name__, layer_.attn.g_scale)
 
     if config['method'] == 'Pion':
         print("Generating pions with momentum of {0} GeV/c".format(args.momentum))
@@ -134,20 +140,17 @@ def main(config,args):
     true_xs = []
     true_ys = []
     true_times = []
+    ground_truth = []
 
     for i in range(len(datapoints)):
-        if (datapoints[i]['Theta'] == args.theta) and (datapoints[i]['P'] == args.momentum) and (datapoints[i]['Phi'] == 0.0) and (datapoints[i]['NHits'] < 300):
+        if (datapoints[i]['Theta'] == args.theta) and (datapoints[i]['P'] == args.momentum) and (datapoints[i]['Phi'] == 0.0) and (datapoints[i]['NHits'] < 250) and (datapoints[i]['NHits'] > 5):
             numTracks += 1
-            true_x,true_y = convert_indices_gt(datapoints[i]['pmtID'],datapoints[i]['pixelID'])
-            true_xs.append(true_x)
-            true_ys.append(true_y)
-            true_times.append(datapoints[i]['leadTime'])
-
-    true_xs,true_ys,true_times = np.concatenate(true_xs,0),np.concatenate(true_ys,0),np.concatenate(true_times,0)
-    ground_truth = np.concatenate([np.c_[true_xs],np.c_[true_ys],np.c_[true_times]],axis=1)
+            ground_truth.append(datapoints[i])
+         
     
     
     k = np.array([args.momentum,args.theta])
+    k_unscaled = k.copy()
     k = 2*(k - conditional_mins) / (conditional_maxes - conditional_mins) - 1.0
     k = torch.tensor(k).to('cuda').float().unsqueeze(0).repeat(inference_batch, 1)
 
@@ -166,55 +169,57 @@ def main(config,args):
 
     kbar = pkbar.Kbar(target=num_itter + 1, width=20, always_stateful=False)
 
-    times = []
-    pixels = []
+    fast_sim = []
     torch.cuda.empty_cache()
     start = time.time()
     for i in range(num_itter):
 
         with torch.no_grad():
-            idx,t = net.generate(k,method=args.sampling,temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p)
+            tracks = net.generate(k,unscaled_k=k_unscaled,method=args.sampling,temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p)
 
-        pixels += idx
-        times += t
+        fast_sim += tracks
 
         kbar.update(i)
-    
+        
     end = time.time()    
     torch.cuda.empty_cache()
 
     # Generate the last batch of tracks if any
     if last_batch > 0:
         k = np.array([args.momentum,args.theta])
-        #k = (k - conditional_mins) / (conditional_maxes - conditional_mins)
+        k_unscaled = k.copy()
         k = 2*(k - conditional_mins) / (conditional_maxes - conditional_mins) - 1.0
         k = torch.tensor(k).to('cuda').float().unsqueeze(0).repeat(last_batch, 1)   
 
         with torch.no_grad():
-            idx,t = net.generate(k,method=args.sampling,temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p)  
+            tracks = net.generate(k,unscaled_k=k_unscaled,method=args.sampling,temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p)  
 
-        pixels += idx 
-        times += t
+        fast_sim += tracks
 
         kbar.add(1)
-
     torch.cuda.empty_cache()
 
-    pixels = np.concatenate(pixels,0)
-    times = np.concatenate(times,0)
+    n_photons = 0
+    n_gamma = 0
 
-    fastsim = convert_indices(pixels,times)
+    for i in range(len(ground_truth)):
+        n_photons += ground_truth[i]['NHits']
+
+    for i in range(len(fast_sim)):
+        n_gamma += fast_sim[i]['NHits']
 
     print(" ")
     print("Number of tracks generated: ",numTracks)
     print("Elapsed Time: ", end - start)
-    print("Time / photon: ",(end - start) / len(fastsim))
     print("Average time / track: ",(end - start) / (numTracks - last_batch))
-    print("True photon yield: ",len(ground_truth)," Generated photon yield: ",len(fastsim))
+    print("True photon yield: ",n_photons," Generated photon yield: ",n_gamma)
     print(" ")
+
     gen_dict = {}
-    gen_dict['GPT'] = fastsim
-    gen_dict['GT'] = ground_truth
+    gen_dict['FastSimPhotons'] = n_gamma
+    gen_dict['TruePhotons'] = n_photons
+    gen_dict['fast_sim'] = fast_sim
+    gen_dict['truth'] = ground_truth
 
     os.makedirs("Generations",exist_ok=True)
     out_folder = os.path.join("Generations",config['Inference']['fixed_point_dir'])
@@ -241,6 +246,8 @@ if __name__=='__main__':
     parser.add_argument('-tk','--topK',default=300,type=int,help="TopK - only used if sampling = TopK")
     parser.add_argument('-np','--nucleus_p',default=0.95,type=float,help="Nucleus P value - only used if sampling = Nucleus")
     args = parser.parse_args()
+
+    #args.context_len = None
 
     config = json.load(open(args.config))
 

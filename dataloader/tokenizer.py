@@ -19,4 +19,5 @@ class TimeTokenizer():
         z = z + np.random.uniform(-0.5 * self.time_res, 0.5 * self.time_res, size=tokens.shape)
         return np.clip(z,self.t_min,self.t_max)
 
+
         

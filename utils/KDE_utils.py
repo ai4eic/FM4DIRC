@@ -71,9 +71,10 @@ def gaussian_unnormalized(x, amplitude, mean, stddev):
 def plot(fit_params,DLL_p,DLL_k,support_method,out_folder,theta,pdf_method,bins=200,momentum=6.0):
     popt_k,popt_p,sigma_sep,bin_centers_k,bin_centers_p,sigma_err, normalized = fit_params
     if normalized:
-        gaussian = gaussian_normalized
+       gaussian = gaussian_normalized
     else:
-        gaussian = gaussian_unnormalized
+       gaussian = gaussian_unnormalized
+
 
     fig = plt.figure(figsize=(6,4))
     if momentum == 6.0:
@@ -114,7 +115,7 @@ class FastDIRC():
         kernel_values = torch.where(r2 < threshold, torch.exp(-r2 * sigma2inv), torch.zeros_like(r2))
         #return kernel_values 
         return torch.exp(-r2)
-        
+
     def get_log_likelihood(self, inpoints,support,eps=0.1,weighted=False):
         # Not useful
         if weighted:
@@ -140,7 +141,7 @@ class FastDIRC():
             y_sig2inv = 1.0 / (1*3.3125) ** 2 # pixel height 
             t_sig2inv = 1.0 / (0.05*2) ** 2  # 0.05 ns time res 
             distance_squared = dx ** 2 * x_sig2inv + dy ** 2 * y_sig2inv + dt ** 2 * t_sig2inv
-    
+            #distance_squared = dx ** 2 * x_sig2inv + dy ** 2 * y_sig2inv
 
             spread = self.radius_spread_function(distance_squared) 
             tprob = spread.sum(dim=1) / len(support)
