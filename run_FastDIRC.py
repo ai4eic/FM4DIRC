@@ -224,11 +224,6 @@ def main(config,args):
     os.makedirs(out_folder,exist_ok=True)
     print("Outputs can be found in " + str(out_folder))
 
-    if args.fs_inference:
-        print("Using fast simulated data as inference to KDE. There is a slight overhead here in terms of time.")
-    else:
-        print("Using Geant4 data as inference to KDE.")
-
     if args.dark_noise:
         print("Adding dark noise to inference tracks.")
     else:

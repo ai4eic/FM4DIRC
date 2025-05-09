@@ -145,7 +145,7 @@
         "out_dir_fixed": "Gen_Eval/QKNorm_Epoch89_PrependKinematics_DoubleStop_Default",
         "out_dir_cont": "Inference/NF_FastSimulated_FPS_PhotonSampling",
         "time_imaging_dir": "CA_MHSA_Combined_QK_Norm_Epoch16_Nucleus0.99s_AMP_6GeV",
-        "KDE_dir": "KDE_Fits/6.0/QKNorm_EpochFinal_PrependKinematics_OrStop_Nucleus995_Temp105_800kPhotons",
+        "KDE_dir": "KDE_Fits/3.0/QKNorm_EpochFinal_PrependKinematics_OrStop_Nucleus995_Temp105_800kPhotons",
         "pion_model_path_NF": "../Cherenkov_FastSim/Trained_Models/Pion_NF_Model.pth",
         "kaon_model_path_NF": "../Cherenkov_FastSim/Trained_Models/Kaon_NF_Model.pth"
     }
