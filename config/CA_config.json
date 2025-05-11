@@ -123,7 +123,6 @@
         "pion_model_path": "Trained_Models/Pion_model.pth",
         "kaon_model_path": "Trained_Models/Kaon_model.pth",
         "fixed_point_dir": "Test",
-        "time_imaging_dir": "CA_MHSA_Combined_QK_Norm_Epoch16_Nucleus0.99s_AMP_6GeV",
         "KDE_dir": "KDE_Fits/3.0/Test_800k",
         "simulation_dir": "Test",
         "pdf_dir": "Test"
