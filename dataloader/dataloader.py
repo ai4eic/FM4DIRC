@@ -70,11 +70,11 @@ def CreateLoaders(train_dataset,val_dataset,config):
 
 def CreateLoadersClassification(train_dataset,val_dataset,config):
     train_loader = DataLoader(train_dataset,
-                            batch_size=config['dataloader']['train']['batch_size'],
+                            batch_size=config['dataloader']['train']['batch_size_cls'],
                             shuffle=True,collate_fn=DIRC_collate_classification,num_workers=config['dataloader']['train']['num_workers'],
                             pin_memory=False)
     val_loader =  DataLoader(val_dataset,
-                            batch_size=config['dataloader']['val']['batch_size'],
+                            batch_size=config['dataloader']['val']['batch_size_cls'],
                             shuffle=False,collate_fn=DIRC_collate_classification,num_workers=config['dataloader']['val']['num_workers'],
                             pin_memory=False)
 
@@ -83,16 +83,10 @@ def CreateLoadersClassification(train_dataset,val_dataset,config):
 
 def InferenceLoader(test_dataset,config):
     return DataLoader(test_dataset,
-                            batch_size=config['dataloader']['test']['batch_size'],
+                            batch_size=config['dataloader']['test']['batch_size_cls'],
                             shuffle=False,collate_fn=DIRC_collate_classification,num_workers=0,
                             pin_memory=False)
 
-
-def CreateInferenceLoaderDLL(test_dataset,config):
-    test_loader =  DataLoader(test_dataset,
-                            batch_size=config['dataloader']['test']['batch_size_DLL'],
-                            shuffle=False,collate_fn=DLL_Inference_collate,num_workers=0)
-    return test_loader    
 
 # Create dataloaders to iterate.
 def CreateInferenceLoader(test_dataset,config):

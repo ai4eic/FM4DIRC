@@ -150,7 +150,7 @@ def main(config,args):
     
     
     k = np.array([args.momentum,args.theta])
-    k_unscaled = k.copy()
+    k_unscaled = np.tile(k.copy(), (inference_batch, 1))
     k = 2*(k - conditional_mins) / (conditional_maxes - conditional_mins) - 1.0
     k = torch.tensor(k).to('cuda').float().unsqueeze(0).repeat(inference_batch, 1)
 
@@ -187,7 +187,7 @@ def main(config,args):
     # Generate the last batch of tracks if any
     if last_batch > 0:
         k = np.array([args.momentum,args.theta])
-        k_unscaled = k.copy()
+        k_unscaled = k_unscaled = np.tile(k.copy(), (last_batch, 1))
         k = 2*(k - conditional_mins) / (conditional_maxes - conditional_mins) - 1.0
         k = torch.tensor(k).to('cuda').float().unsqueeze(0).repeat(last_batch, 1)   
 

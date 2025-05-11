@@ -1,10 +1,10 @@
 {
-    "name": "FineTuneTest_Pion_6GeV",
+    "name": "FineTuneTest_CLS",
     "seed": 752022,
     "run_val": 1,
     "sim_type": "pgun",  
     "datatype": "Simulation", 
-    "data_type": "Pions",
+    "data_type": "Kaons",
     "digitize_time": 1,
     "stats": {
         "x_max": 350.0,
@@ -18,25 +18,6 @@
         "theta_max": 160.0,
         "theta_min": 25.0,
         "time_res": 0.025
-    },
-    "stats_NF": {
-        "x_max": 350.0,
-        "x_min": 2.0,
-        "y_max": 230.1,
-        "y_min": 2.0,
-        "time_max": 157.0,
-        "time_min": 0.0,
-        "P_max": 10.0,
-        "P_min": 0.5,
-        "theta_max": 160.0,
-        "theta_min": 25.0
-    },
-    "model_NF": {
-        "num_layers": 20,
-        "input_shape": 3,
-        "cond_shape": 2,
-        "num_blocks": 2,
-        "hidden_nodes": 128
     },
     "model": {
         "vocab_size": 6147,
@@ -59,12 +40,6 @@
         "time_pad_token": 5922
     },
     "dataset": {
-        "fixed_point_fs": {
-            "data_path_3GeV": "../Cherenkov_FastSim/Generations/NF_New_Prior_3GeV",
-            "data_path_6GeV": "Generations/QKNorm_EpochFinal_PrependKinematics_TimeeStop_DynamicExpMin95",
-            "data_path_9GeV": "../Cherenkov_FastSim/Generations/NF_New_Prior_9GeV",
-            "data_path_full": "../Cherenkov_FastSim/Generations/NF_FullPhaseSpace_NOPhotonSampling"
-        },
         "time_imaging": {
             "data_path_9GeV": "../Cherenkov_FastSim/data/TimeImaging_9GeV/Combined_pik_9GeV_TimeImaging_PiK.pkl",
             "data_path_6GeV": "../Cherenkov_FastSim/data/TimeImaging_6GeV/Combined_pik_6GeV_TimeImaging_PiK.pkl",
@@ -106,11 +81,15 @@
         "gamma": 0.1
     },
     "optimizer": {
-        "lr": 0.0001,
+        "use_warmup": 0,
+        "warmup_percent": 0.01,
+        "lr": 0.001,
+        "lr_cls": 0.001,
         "weight_decay": 0.0,
         "alpha": 0.001
     },
     "num_epochs": 100,
+    "num_epochs_cls": 15,
     "dataloader": {
         "split": [
             0.7,
@@ -119,16 +98,17 @@
         ],
         "train": {
             "batch_size": 128,
-
-
+            "batch_size_cls": 512,
             "num_workers": 0
         },
         "val": {
-            "batch_size": 128,
+            "batch_size": 256,
+            "batch_size_cls": 512,
             "num_workers": 0
         },
         "test": {
-            "batch_size": 25,
+            "batch_size_cls": 1024,
+            "batch_size": 256,
             "num_workers": 0,
             "batch_size_DLL": 25
         }
@@ -138,15 +118,14 @@
     },
     "Inference": {
         "batch_size": 35,
-        "pion_model_path": "Trained_Models/CrossAttention/Pion_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_CustomMHSA_QKNorm_Combined___Apr-29-2025/Pion_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_CustomMHSA_QKNorm_Combined_epoch96_val_loss_9.459465.pth",
-        "kaon_model_path": "Trained_Models/CrossAttention/Kaon_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_CustomMHSA_QKNorm_Combined___Apr-29-2025/Kaon_GPT_attn888_256Embed_5923TimeVocab_CrossAttn_CustomMHSA_QKNorm_Combined_epoch97_val_loss_9.499614.pth",
-        "full_phase_space_dir": "CA_MHSA_Combined_QK_Norm_Epoch16_Default_AMP_3GeV",
-        "fixed_point_dir": "QKNorm_EpochFinal_PrependKinematics_OrStop_Nucleus995_Temp105",
-        "out_dir_fixed": "Gen_Eval/QKNorm_Epoch89_PrependKinematics_DoubleStop_Default",
-        "out_dir_cont": "Inference/NF_FastSimulated_FPS_PhotonSampling",
+        "classifier_path": "Trained_Models/Classification_model.pth",
+        "out_dir_fixed": "Inference/Test",
+        "pion_model_path": "Trained_Models/Pion_model.pth",
+        "kaon_model_path": "Trained_Models/Kaon_model.pth",
+        "fixed_point_dir": "Test",
         "time_imaging_dir": "CA_MHSA_Combined_QK_Norm_Epoch16_Nucleus0.99s_AMP_6GeV",
-        "KDE_dir": "KDE_Fits/3.0/QKNorm_EpochFinal_PrependKinematics_OrStop_Nucleus995_Temp105_800kPhotons",
-        "pion_model_path_NF": "../Cherenkov_FastSim/Trained_Models/Pion_NF_Model.pth",
-        "kaon_model_path_NF": "../Cherenkov_FastSim/Trained_Models/Kaon_NF_Model.pth"
+        "KDE_dir": "KDE_Fits/3.0/Test_800k",
+        "simulation_dir": "Test",
+        "pdf_dir": "Test"
     }
 }

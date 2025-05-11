@@ -233,7 +233,6 @@ def main(config,args):
     sigma_dict_geant = {}
     sigma_dict_fs = {}
     thetas =  [30.,35.,40.,45.,50.,55.,60.,65.,70.,75.,80.,85.,90.,95.,100.,105.,110.,115.,120.,125.,130.,135.,140.,145.,150.] 
-    #thetas = [140.]
     for theta_ in thetas:
         geant_support_pions = []
         geant_support_kaons = []
@@ -271,8 +270,8 @@ def main(config,args):
         print("--------------- Fast Simulation -----------------")
         with torch.set_grad_enabled(False):
             k = np.array([args.momentum,theta_])
+            k_unscaled = np.tile(k.copy(), (inference_batch, 1))
             k = 2*(k - conditional_mins) / (conditional_maxes - conditional_mins) - 1.0
-            k_unscaled = k.copy()
             k = torch.tensor(k).to('cuda').float().unsqueeze(0).repeat(inference_batch, 1)
             
             fs_kaons = []

@@ -14,15 +14,16 @@ import random
 import numpy as np
 import pkbar
 import math
+import warnings
 from datetime import datetime
-
-from transformers import get_cosine_schedule_with_warmup
 
 from dataloader.dataset import DIRC_Dataset
 from dataloader.tokenizer import TimeTokenizer
 from dataloader.dataloader import CreateLoaders
 
 from models.GPT import Cherenkov_GPT
+
+warnings.filterwarnings("ignore", message=".*weights_only.*")
 
 def main(config,resume,distributed):
 
@@ -48,10 +49,10 @@ def main(config,resume,distributed):
     print('Creating Loaders.')
     data_type = config['data_type']
     if data_type == "Kaons":
-        data_path = config['dataset']['training']['kaon_data_path']
+        data_path = config['dataset']['validation']['kaon_data_path']
         val_data_path = config['dataset']['validation']['kaon_data_path']
     elif data_type == "Pions":
-        data_path = config['dataset']['training']['pion_data_path']
+        data_path = config['dataset']['validation']['pion_data_path']
         val_data_path = config['dataset']['validation']['pion_data_path']
     else:
         raise ValueError("Data type: {0} is not supported.".format(data_type))
@@ -60,13 +61,13 @@ def main(config,resume,distributed):
     vocab_size = config['model']['vocab_size']
     time_vocab = config['model']['time_vocab']
     embed_dim = config['model']['embed_dim']
-    drop_rate = config['model']['drop_rate']
     attn_heads = config['model']['attn_heads']
     num_blocks = config['model']['num_blocks']
     kin_size = config['model']['kin_size']
     hidden_units = config['model']['hidden_units']
     mlp_scale = config['model']['mlp_scale']
     msl = config['model']['max_seq_length']
+    drop_rates = config['model']['drop_rates']
 
     # Time tokenization
     digitize_time = bool(config['digitize_time'])
@@ -106,12 +107,12 @@ def main(config,resume,distributed):
     if not distributed:
         print("Using single GPU.")
         net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,time_vocab=time_vocab)
+                num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,time_vocab=time_vocab,drop_rates=drop_rates)
     else:
         print("Using {0} GPUs.".format(torch.cuda.device_count()))
         print(" ")
         net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,time_vocab=time_vocab)
+                num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,time_vocab=time_vocab,drop_rates=drop_rates)
         net = DataParallel(net)
 
     t_params = sum(p.numel() for p in net.parameters())
@@ -121,26 +122,9 @@ def main(config,resume,distributed):
 	# Optimizer
     num_epochs = int(config['num_epochs'])
     lr = float(config['optimizer']['lr'])
-    use_warmup = bool(config['optimizer']['use_warmup'])
 
-    if use_warmup:
-        print("Using warmup.")
-        batch_size = config['dataloader']['train']['batch_size']
-        num_samples = len(train_dataset)
-        steps_per_epoch = math.ceil(num_samples / batch_size)
-
-        total_steps = steps_per_epoch * num_epochs
-
-        optimizer = optim.Adam(list(filter(lambda p: p.requires_grad, net.parameters())), lr=lr)
-        warmup_steps = int(config['optimizer']['warmup_percent'] * total_steps)  
-
-        scheduler = get_cosine_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=warmup_steps,
-            num_training_steps=total_steps)
-    else:
-        print("Using fixed LR with RAdam.")
-        optimizer = torch.optim.RAdam(list(filter(lambda p: p.requires_grad, net.parameters())), lr=lr)
+    # No need for warmup
+    optimizer = torch.optim.RAdam(list(filter(lambda p: p.requires_grad, net.parameters())), lr=lr)
 
 
     startEpoch = 0
@@ -151,8 +135,6 @@ def main(config,resume,distributed):
         dict = torch.load(resume)
         net.load_state_dict(dict['net_state_dict'])
         optimizer.load_state_dict(dict['optimizer'])
-        if use_warmup:
-            scheduler.load_state_dict(dict['scheduler'])
         startEpoch = dict['epoch']+1
         history = dict['history']
         global_step = dict['global_step']
@@ -221,10 +203,6 @@ def main(config,resume,distributed):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=1.0)
             optimizer.step()
-            if use_warmup:
-                scheduler.step()
-    
-
 			# statistics
             running_loss += loss.item() * tokens.shape[0]
 
@@ -233,9 +211,6 @@ def main(config,resume,distributed):
             global_step += 1
         
         history['train_loss'].append(running_loss / len(train_loader.dataset))
-        if use_warmup:
-            history['lr'].append(scheduler.get_last_lr()[0])
-
 
 		######################
 		## validation phase ##
@@ -292,8 +267,6 @@ def main(config,resume,distributed):
         checkpoint={}
         checkpoint['net_state_dict'] = net.state_dict()
         checkpoint['optimizer'] = optimizer.state_dict()
-        if use_warmup:
-            checkpoint['scheduler'] = scheduler.state_dict()
         checkpoint['epoch'] = epoch
         checkpoint['history'] = history
         checkpoint['global_step'] = global_step
@@ -305,7 +278,7 @@ def main(config,resume,distributed):
 
 if __name__=='__main__':
 	# PARSE THE ARGS
-    parser = argparse.ArgumentParser(description='Swin Training')
+    parser = argparse.ArgumentParser(description='Generative Training')
     parser.add_argument('-c', '--config', default='config.json',type=str,
                         help='Path to the config file (default: config.json)')
     parser.add_argument('-r', '--resume', default=None, type=str,

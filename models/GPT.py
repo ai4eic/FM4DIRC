@@ -298,6 +298,7 @@ class Cherenkov_GPT(nn.Module):
                 self.time_embedding = nn.Linear(1,embed_dim)
 
             self.classification_head = nn.Linear(embed_dim,1)
+            self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
         
         self.device = device
         self.SOS_token = 0
@@ -306,19 +307,10 @@ class Cherenkov_GPT(nn.Module):
         self.time_pad_token = time_vocab - 1
         self.EOS_time_token = time_vocab - 2
 
-    def __convert_vocab(self,):
-        possible_times = torch.tensor(self.time_tok)
-
     def forward(self, x,t,k,padding_mask=None):
         seq_len = x.shape[1]
         batch_size = x.shape[0]
         pos = torch.arange(0, seq_len, dtype=torch.long, device=x.device).unsqueeze(0)
-
-        if self.classification:
-            # Mask output embedding to class head
-            kinematic_mask = torch.zeros(batch_size, k.shape[-1], dtype=torch.bool, device=x.device)  # Masking for kinematic tokens
-            classification_mask = ~torch.isin(x, torch.tensor([self.SOS_token,self.EOS_token,self.pad_token],dtype=torch.long,device=x.device))
-            classification_mask = torch.cat((kinematic_mask, classification_mask), dim=1) 
 
         if not self.digitize_time:
             t = t.reshape(-1, 1)  # [batch_size * seq_len, 1]
@@ -344,7 +336,13 @@ class Cherenkov_GPT(nn.Module):
             kinematic_mask = torch.zeros(batch_size, k.shape[-1], dtype=torch.bool, device=x.device)  # No masking for kinematic tokens
             padding_mask = torch.cat((kinematic_mask, padding_mask), dim=1) 
 
-            
+        if self.classification:
+            cls_tokens = self.cls_token.expand(batch_size, -1, -1)
+            cls_mask = torch.zeros(batch_size,1,dtype=torch.bool,device=x.device) # no mask for cls token
+            padding_mask = torch.cat((cls_mask,padding_mask),dim=1)
+            x = torch.cat((cls_tokens,x),dim=1)
+            t_embed = torch.cat((cls_tokens,t_embed),dim=1)
+
         for layer in self.layers:
             if layer.__class__.__name__ == "CATransformerBlock":
                 x = layer(x, t_embed,padding_mask=padding_mask,classification=self.classification)
@@ -364,80 +362,7 @@ class Cherenkov_GPT(nn.Module):
             return pixel,t_out
 
         else:
-            masked_x = x * classification_mask.unsqueeze(-1).float() 
-            masked_x_mean = masked_x.sum(dim=1) 
-            return self.classification_head(masked_x_mean).squeeze(-1)
-
-
-    def make_track(self,p,t,k,add_dark_noise=False):
-        num_samples = p.shape[0]
-        pmtID = p // npix
-        pixelID = p % npix
-        channel = p
-
-        row = (pmtID//6) * 16 + pixelID//16 
-        col = (pmtID%6) * 16 + pixelID%16
-        
-        x = 2 + col * pixel_width + (pmtID % 6) * gapx + (pixel_width) / 2. # Center at middle
-        y = 2 + row * pixel_height + (pmtID // 6) * gapy + (pixel_height) / 2. # Center at middle
-
-        Phi = 0.0
-        # I need to test this, but should work fine based off previous work
-        if add_dark_noise:
-            x,y,t,pmtID,pixelID,channel,dn_hits = self.__add_dark_noise(np.concatenate([np.c_[x],np.c_[y],np.c_[t],np.c_[pmtID],np.c_[pixelID],np.c_[channel]],axis=1),dark_noise_pmt=dark_rate)
-            num_samples += dn_hits
-            return {"NHits":num_samples,"P":P,"Theta":Theta,"Phi":Phi,"x":x,"y":y,"leadTime":t,"pmtID":pmtID,"pixelID":pixelID,"channel":channel}
-        else:
-            return {"NHits":num_samples,"P":k[0],"Theta":k[1],"Phi":Phi,"x":x,"y":y,"leadTime":t,"pmtID":pmtID,"pixelID":pixelID,"channel":p}
-
-
-    def post_process(self, pixels, times,k,return_tokens=False,add_dark_noise=False):
-        processed_tracks = []
-        valid_pixels = []
-        valid_times = []
-
-        pixel_mask_tokens = torch.tensor([self.pad_token, self.SOS_token, self.EOS_token], device=pixels.device)
-        time_mask_tokens = torch.tensor([self.time_pad_token, self.SOS_token, self.EOS_time_token], device=pixels.device)
-        
-        for idx, t in zip(pixels, times):
-            pixel_mask = ~torch.isin(idx, pixel_mask_tokens)
-            time_mask = ~torch.isin(t, time_mask_tokens)
-            mask = pixel_mask & time_mask  # must be valid in both pixel and time
-
-            if idx[mask].shape[0] < 5 or idx[mask].shape[0] > 250: # incase
-                continue
-            
-            valid_pixels.append(idx[mask])
-            valid_times.append(t[mask])
-            processed_pixels = (idx[mask].clone() - 1).detach().cpu().numpy()
-            if self.digitize_time and self.detokenize_func is not None:
-                processed_times = self.detokenize_func(t[mask].clone().detach().cpu().numpy())
-            else:
-                processed_times = t[mask].detach().cpu().numpy()
-            
-            processed_tracks.append(self.make_track(processed_pixels,processed_times,k,add_dark_noise=add_dark_noise))
-
-        if return_tokens:
-            return processed_tracks,valid_pixels,valid_times
-        else:
-            return processed_tracks
-
-    def __nucleus(self,logits,p=0.9):
-        sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
-        probs = torch.softmax(sorted_logits, dim=-1)
-        cumsum_probs = torch.cumsum(probs, dim=-1)
-
-        mask = cumsum_probs > p
-        mask[..., 1:] = mask[..., :-1].clone()
-        mask[..., 0] = False
-
-        sorted_logits[mask] = float('-inf')
-        filtered_logits = torch.gather(sorted_logits, -1, torch.argsort(sorted_indices, dim=-1))
-
-        probs = torch.softmax(filtered_logits, dim=-1)
-        idx_next = torch.multinomial(probs, num_samples=1) 
-
-        return idx_next
+            return self.classification_head(x[:, 0]).squeeze(-1)
 
     def __topK(self,logits,topK=50):
         topk_logits, topk_indices = torch.topk(logits, k=topK, dim=-1)
@@ -469,6 +394,23 @@ class Cherenkov_GPT(nn.Module):
             return sample_token, min_p_logits
         return sample_token
 
+    def __nucleus(self,logits,p=0.9):
+        sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+        probs = torch.softmax(sorted_logits, dim=-1)
+        cumsum_probs = torch.cumsum(probs, dim=-1)
+
+        mask = cumsum_probs > p
+        mask[..., 1:] = mask[..., :-1].clone()
+        mask[..., 0] = False
+
+        sorted_logits[mask] = float('-inf')
+        filtered_logits = torch.gather(sorted_logits, -1, torch.argsort(sorted_indices, dim=-1))
+
+        probs = torch.softmax(filtered_logits, dim=-1)
+        idx_next = torch.multinomial(probs, num_samples=1) 
+
+        return idx_next
+
     def __linear_dynamic_temp(self,step,max_length,max_temp=1.0,min_temp=0.95):
         return   max(max_temp - step / max_length,min_temp)
     
@@ -478,11 +420,63 @@ class Cherenkov_GPT(nn.Module):
         temperature = min_temp + alpha * math.exp(-decay_rate * step)
         return temperature
 
+    def make_track(self,p,t,k,add_dark_noise=False,PID=None):
+        num_samples = p.shape[0]
+        pmtID = p // npix
+        pixelID = p % npix
+        channel = p
+
+        if PID is None:
+            PID = -1
+
+        row = (pmtID//6) * 16 + pixelID//16 
+        col = (pmtID%6) * 16 + pixelID%16
+        
+        x = 2 + col * pixel_width + (pmtID % 6) * gapx + (pixel_width) / 2. # Center at middle
+        y = 2 + row * pixel_height + (pmtID // 6) * gapy + (pixel_height) / 2. # Center at middle
+
+        Phi = 0.0
+        if add_dark_noise:
+            x,y,t,pmtID,pixelID,channel,dn_hits = self.__add_dark_noise(np.concatenate([np.c_[x],np.c_[y],np.c_[t],np.c_[pmtID],np.c_[pixelID],np.c_[channel]],axis=1))
+            num_samples += dn_hits
+            return {"NHits":num_samples,"P":k[0],"Theta":k[1],"Phi":Phi,"x":x,"y":y,"leadTime":t,"pmtID":pmtID,"pixelID":pixelID,"channel":channel,"PID":PID}
+        else:
+            return {"NHits":num_samples,"P":k[0],"Theta":k[1],"Phi":Phi,"x":x,"y":y,"leadTime":t,"pmtID":pmtID,"pixelID":pixelID,"channel":p,"PID":PID}
+
+
+    def post_process(self, pixels, times,k,add_dark_noise=False,PID=None):
+        processed_tracks = []
+        valid_pixels = []
+        valid_times = []
+
+        pixel_mask_tokens = torch.tensor([self.pad_token, self.SOS_token, self.EOS_token], device=pixels.device)
+        time_mask_tokens = torch.tensor([self.time_pad_token, self.SOS_token, self.EOS_time_token], device=pixels.device)
+        
+        for i,(idx, t) in enumerate(zip(pixels, times)):
+            pixel_mask = ~torch.isin(idx, pixel_mask_tokens)
+            time_mask = ~torch.isin(t, time_mask_tokens)
+            mask = pixel_mask & time_mask  # must be valid in both pixel and time
+
+            if idx[mask].shape[0] < 5 or idx[mask].shape[0] > 250: # incase
+                continue
+            
+            valid_pixels.append(idx[mask])
+            valid_times.append(t[mask])
+            processed_pixels = (idx[mask].clone() - 1).detach().cpu().numpy()
+            if self.digitize_time and self.detokenize_func is not None:
+                processed_times = self.detokenize_func(t[mask].clone().detach().cpu().numpy())
+            else:
+                processed_times = t[mask].detach().cpu().numpy()
+            
+            processed_tracks.append(self.make_track(processed_pixels,processed_times,k[i],add_dark_noise=add_dark_noise,PID=PID))
+
+        return processed_tracks
+
 
     @torch.no_grad()
     def generate(self, k, unscaled_k, max_seq_len: int = 250, context_len = None,
                  temperature: float = 1.05, method="Default", topK=100, nucleus_p=0.98,
-                 dynamic_temp=False,add_dark_noise=False):
+                 dynamic_temp=False,add_dark_noise=False,PID=None):
 
         assert method in ["Nucleus", "TopK", "Default","Greedy","Min_p"]
         batch_size = k.shape[0]
@@ -556,8 +550,8 @@ class Cherenkov_GPT(nn.Module):
 
             if torch.all(is_done):
                 break
-
-        return self.post_process(idx,t,unscaled_k,add_dark_noise)
+        
+        return self.post_process(idx,t,unscaled_k,add_dark_noise,PID)
 
 
     @torch.no_grad()
@@ -566,16 +560,6 @@ class Cherenkov_GPT(nn.Module):
                  nucleus_p=0.995, dynamic_temp=False,add_dark_noise=False):
 
         assert kinematics is not None
-
-        print("PDF Generation: ")
-        print("Sampling Method: ",method)
-        print("Temperature: ",temperature)
-        if method == "Nucleus":
-            print("Nucleus P:",nucleus_p)
-        elif method == "TopK":
-            print("TopK: ",topK)
-        else:
-            pass
 
         batch_size = kinematics.shape[0]
         kbar = pkbar.Kbar(target=numPhotons, width=20, always_stateful=False)
@@ -605,10 +589,9 @@ class Cherenkov_GPT(nn.Module):
             ys.append(track_['y'])
             times.append(track_['leadTime'])
 
-        xs = np.concatenate(xs)
-        ys = np.concatenate(ys)
-        times = np.concatenate(times)
-        print(xs.shape,ys.shape,times.shape)
+        xs = np.concatenate(xs)[:numPhotons]
+        ys = np.concatenate(ys)[:numPhotons]
+        times = np.concatenate(times)[:numPhotons]
         return {"x":xs,"y":ys,"leadTime":times}
 
 

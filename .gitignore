@@ -1,5 +1,4 @@
 *pycache*
-Trained_Models
 *KDE_Fits*
 *KDE_Fits_OLD*
 *LUT_Stats*
@@ -24,3 +23,8 @@ config/config_class.json
 config/config.json
 config/hpDIRC_config_clean.json
 config/CA_config_local.json
+Simulation
+PDFs
+*.pdf
+Trained_Models_ALL
+LUT_Stats

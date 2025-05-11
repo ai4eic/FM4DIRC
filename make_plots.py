@@ -17,6 +17,68 @@ from utils.utils import convert_indices_gt
 
 t_bins = np.arange(9.0,157.0,0.5)
 
+def make_PDFs(pions, kaons, outpath, momentum=6.0, theta=30, log_norm=True):
+    pion_xs = pions['x']
+    pion_ys = pions['y']
+    pion_time = pions['leadTime'] 
+    kaon_xs = kaons['x'] 
+    kaon_ys = kaons['y']  
+    kaon_time = kaons['leadTime'] 
+    
+    if log_norm:
+        norm = LogNorm()
+    else:
+        norm = None
+
+    gs = gridspec.GridSpec(3, 2, height_ratios=[1.5, 0.5, 1])
+
+    fig = plt.figure(figsize=(18, 12))
+    ax1 = fig.add_subplot(gs[0, 0])  # Top-left
+    ax2 = fig.add_subplot(gs[0, 1])  # Top-right
+    ax3 = fig.add_subplot(gs[2, :])  # Bottom image, spans both columns
+
+    ax3.set_position([
+        ax1.get_position().x0 - 0.05 + (ax2.get_position().x0 - ax1.get_position().x0) / 2,  # Center horizontally
+        ax3.get_position().y0 - 0.02,  # Keep original y position
+        ax1.get_position().width * 1.2,  # Keep same width as top images
+        ax1.get_position().height  # Keep same height
+    ])
+
+    # FastSim 2D Hit Pattern
+    h_fs, xedges, yedges, im1 = ax1.hist2d(pion_xs, pion_ys, bins=[bins_x, bins_y], norm=norm, density=True)
+    ax1.set_title("Pion Hit Pattern", fontsize=30)
+    ax1.tick_params(axis="both", labelsize=28)
+    ax1.set_xlabel("X (mm)",fontsize=30,labelpad=15)
+    ax1.set_ylabel("Y (mm)",fontsize=30,labelpad=15)
+    # Geant4 2D Hit Pattern
+    h_g, xedges, yedges, im2 = ax2.hist2d(kaon_xs, kaon_ys, bins=[bins_x, bins_y], norm=norm, density=True)
+    ax2.set_title("Kaon Hit Pattern", fontsize=30)
+    ax2.tick_params(axis="both", labelsize=28)
+    ax2.set_xlabel("X (mm)",fontsize=30,labelpad=15)
+    #ax2.set_tlabel("Y [mm]",fontsize=24)    
+
+    # Bottom row: Combined Time Distribution
+    ax3.hist(pion_time, bins=t_bins, density=True, histtype='step', color='k', label="Pion",linewidth=2)
+    ax3.hist(kaon_time, bins=t_bins, density=True, histtype='step', color='r', label="Kaon",linewidth=2)
+    
+    ax3.set_xlabel("Time (ns)", fontsize=30)
+    ax3.tick_params(axis="both", labelsize=28)
+    ax3.set_ylabel("A.U.", fontsize=30)
+    ax3.set_yscale('log')
+    ax3.set_ylim(1e-5, 10e-1)
+    ax3.text(108, 0.5, r"$|\vec{p}|$" + f" = {int(momentum)} GeV/c" "\n" r"$\theta =$"+ f"{int(theta)}" +r"$^\circ$".format(momentum, theta), fontsize=24,
+    verticalalignment='top',  # Align text at the top
+    bbox=dict(facecolor='white', edgecolor='grey', boxstyle='round,pad=0.3'))
+    legend_lines = [
+        Line2D([0], [0], color='k', linewidth=2, label="Pion"),
+        Line2D([0], [0], color='r', linewidth=2, label="Kaon.")
+    ]
+    
+    legend = ax3.legend(handles=legend_lines, fontsize=24,loc=(0.638,0.435),frameon=True)
+    legend.get_frame().set_edgecolor('grey')
+    plt.savefig(outpath, bbox_inches="tight")
+    plt.close()
+
 def extract_theta(filename):
     match = re.search(r'theta_([0-9]+(?:\.[0-9]+)?)', filename)
     if match:
@@ -65,7 +127,8 @@ def photon_yield_plots(path_,label,momentum,outpath):
     ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
     ax.ticklabel_format(axis='y', style='sci', scilimits=(0, 0))
     ax.yaxis.offsetText.set_fontsize(20)
-    ax.set_title(str(label)+r" - $|\vec{p}|$ ="+r" {0} GeV/c".format(int(momentum)),fontsize=32)
+    #ax.set_title(str(label)+r" - $|\vec{p}|$ ="+r" {0} GeV/c".format(int(momentum)),fontsize=32)
+    ax.set_title(r"{0} GeV/c ".format(momentum) + str(label) + 's',fontsize=32)
     ax.set_xlabel('Polar Angle [deg.]',fontsize=30)
     ax.tick_params(axis='y', labelsize=20)
     ax.tick_params(axis='x',labelsize=20)
@@ -280,8 +343,12 @@ def make_ratios(path_,label,momentum,outpath):
     t_true += + np.random.normal(0,0.1,size=t_true.shape)
     #print("FastSim Size: ",len(x)," GT Size: ",len(x_true))
 
+    
     fig, ax = plt.subplots(2, 3, figsize=(18, 8), gridspec_kw={'height_ratios': [4, 1]}, sharex='col',sharey='row')
     ax = ax.ravel()
+
+    #text_momentum = label_mom(momentum)
+    text_momentum = str(momentum)
 
     # Time PDF
     n_true_t, _ = np.histogram(t_true, bins=t_bins, density=True)
@@ -292,7 +359,7 @@ def make_ratios(path_,label,momentum,outpath):
     ax[0].hist(t_true, density=True, color='k', label='Truth', bins=t_bins, histtype='step', lw=2)
     ax[0].hist(t, density=True, color='red', label='Generated', bins=t_bins, histtype='step', linestyle='dashed', lw=2)
     ax[0].set_xlabel("Hit Time (ns)", fontsize=20, labelpad=10)
-    ax[0].set_ylabel("Density", fontsize=20, labelpad=10)
+    ax[0].set_ylabel("Density", fontsize=36, labelpad=20)
 
     # X PDF
     n_true_x, _ = np.histogram(x_true, bins=bins_x, density=True)
@@ -302,8 +369,8 @@ def make_ratios(path_,label,momentum,outpath):
     ratio_err_x = 3*alea_x / (n_true_x + 1e-10)
     ax[1].hist(x_true, density=True, color='k', label='Truth', bins=bins_x, histtype='step', lw=2)
     ax[1].hist(x, density=True, color='red', label='Generated', bins=bins_x, histtype='step', linestyle='dashed', lw=2)
-    ax[1].set_xlabel("X (mm)", fontsize=20, labelpad=10)
-    ax[1].set_title(str(label)+r" - $|\vec{p}|$ ="+r" {0} GeV/c".format(int(momentum)),fontsize=25)
+    ax[1].set_xlabel("X (mm)", fontsize=20, labelpad=20)
+    ax[1].set_title(r"{0} GeV/c ".format(text_momentum) + str(label) + 's',fontsize=40, pad=30)
 
     # Y PDF
     n_true_y, _ = np.histogram(y_true, bins=bins_y, density=True)
@@ -313,7 +380,7 @@ def make_ratios(path_,label,momentum,outpath):
     n_gen_y, _ = np.histogram(y, bins=bins_y, density=True)
     ax[2].hist(y_true, density=True, color='k', label='Truth', bins=bins_y, histtype='step', lw=2)
     ax[2].hist(y, density=True, color='red', label='Generated', bins=bins_y, histtype='step', linestyle='dashed', lw=2)
-    ax[2].set_xlabel("Y (mm)", fontsize=20, labelpad=10)
+    ax[2].set_xlabel("Y (mm)", fontsize=20, labelpad=20)
 
     # Ratio plot for Time PDF
     ratio_t = n_gen_t / (n_true_t + 1e-50)
@@ -322,9 +389,9 @@ def make_ratios(path_,label,momentum,outpath):
     ratio_t_lower = ratio_t - ratio_err_t
     ax[3].step((t_bins[:-1] + t_bins[1:]) /2, ratio_t, color='red',linestyle='-',linewidth=1)
     ax[3].fill_between((t_bins[:-1] + t_bins[1:])/2 , ratio_t_lower, ratio_t_upper, color='red', alpha=0.3, step='pre')
-    ax[3].set_ylabel('Ratio', fontsize=15)
+    ax[3].set_ylabel('Ratio', fontsize=36, labelpad=20)
     ax[3].set_ylim([0, 2])
-    ax[3].set_yticks([0.5, 1, 1.5])
+    ax[3].set_yticks([0, 0.5, 1, 1.5])
     ax[3].axhline(1.0, color='black', linestyle='--', lw=1)
 
     # Ratio plot for X PDF
@@ -353,15 +420,18 @@ def make_ratios(path_,label,momentum,outpath):
 
     # Format
     legend_lines = [
-        Line2D([0], [0], color='k', linewidth=2, label="Geant4",linestyle='-'),
-        Line2D([0], [0], color='r', linewidth=2, label="FastSim.",linestyle='--')
+        Line2D([0], [0], color='r', linewidth=2, label="FastSim.",linestyle='--'),
+        Line2D([0], [0], color='k', linewidth=2, label="Geant4",linestyle='-')
     ]
     
-    ax[1].legend(handles=legend_lines,loc="upper center", fontsize=18.5,)
+    legend = fig.legend(handles=legend_lines,loc="upper center", bbox_to_anchor= (0.51, 0.92),fontsize=26, ncol=2, frameon=True, columnspacing=0.3, framealpha=1)
+    legend.get_frame().set_zorder(100)  # Set zorder to a higher value
+
     for i in range(3):
         ax[i].tick_params(axis='both', which='major', labelsize=18)
         ax[i].set_yscale('log')
-        
+    
+    ax[3].set_xticks([0, 50, 100, 150])
     ax[3].set_xlabel("Time (ns)",fontsize=20)
     ax[4].set_xlabel("X (mm)",fontsize=20)
     ax[5].set_xlabel("Y (mm)",fontsize=20)
