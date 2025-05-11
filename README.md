@@ -8,7 +8,8 @@ Foundation models ....
 
 # Contents
 - [Data used for Training](#Section-1)
-- [Environment](#Section-1)
+- [Environment](#Section-2)
+- [Architecture](#Section-3)
 - [Usage](#Section-4)
 
 
