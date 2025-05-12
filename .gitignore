@@ -17,7 +17,6 @@ OldGens
 *eval_generative_fixed.py*
 *test_guide.py*
 *fine_tune.py*
-*run_simulation.py*
 *old_models*
 config/config_class.json
 config/config.json
@@ -28,3 +27,4 @@ PDFs
 *.pdf
 Trained_Models_ALL
 LUT_Stats
+perturbative_tests.py
