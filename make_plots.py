@@ -129,10 +129,10 @@ def photon_yield_plots(path_,label,momentum,outpath):
     ax.yaxis.offsetText.set_fontsize(20)
     #ax.set_title(str(label)+r" - $|\vec{p}|$ ="+r" {0} GeV/c".format(int(momentum)),fontsize=32)
     ax.set_title(r"{0} GeV/c ".format(momentum) + str(label) + 's',fontsize=32)
-    ax.set_xlabel('Polar Angle [deg.]',fontsize=30)
-    ax.tick_params(axis='y', labelsize=20)
-    ax.tick_params(axis='x',labelsize=20)
-    legend = ax.legend(loc='upper center', fontsize=24)
+    ax.set_xlabel('Polar Angle [deg.]',fontsize=32,labelpad=15)
+    ax.tick_params(axis='y', labelsize=25)
+    ax.tick_params(axis='x',labelsize=25)
+    legend = ax.legend(loc='upper center', fontsize=28)
     legend.get_frame().set_facecolor('white')  
     legend.get_frame().set_edgecolor('grey')  
     legend.get_frame().set_alpha(1.0) 
@@ -207,6 +207,7 @@ def make_plots_fastsim(file_path,label,momentum,theta,outpath,filename,log_norm=
     ax3.set_ylabel("A.U.", fontsize=30)
     ax3.set_yscale('log')
     ax3.set_ylim(1e-5, 10e-1)
+    ax3.set_xticks([0,50,100,150])
     ax3.text(108, 0.015, r"$|\vec{p}|$" + f" = {int(momentum)} GeV/c" "\n" r"$\theta =$"+ f"{int(theta)}" +r"$^\circ$".format(momentum, theta), fontsize=24,
     verticalalignment='top',  # Align text at the top
     bbox=dict(facecolor='white', edgecolor='grey', boxstyle='round,pad=0.3'))
@@ -359,7 +360,7 @@ def make_ratios(path_,label,momentum,outpath):
     ax[0].hist(t_true, density=True, color='k', label='Truth', bins=t_bins, histtype='step', lw=2)
     ax[0].hist(t, density=True, color='red', label='Generated', bins=t_bins, histtype='step', linestyle='dashed', lw=2)
     ax[0].set_xlabel("Hit Time (ns)", fontsize=20, labelpad=10)
-    ax[0].set_ylabel("Density", fontsize=36, labelpad=20)
+    ax[0].set_ylabel("Density", fontsize=40, labelpad=20)
 
     # X PDF
     n_true_x, _ = np.histogram(x_true, bins=bins_x, density=True)
@@ -428,16 +429,19 @@ def make_ratios(path_,label,momentum,outpath):
     legend.get_frame().set_zorder(100)  # Set zorder to a higher value
 
     for i in range(3):
-        ax[i].tick_params(axis='both', which='major', labelsize=18)
+        ax[i].tick_params(axis='both', which='major', labelsize=30)
         ax[i].set_yscale('log')
     
     ax[3].set_xticks([0, 50, 100, 150])
-    ax[3].set_xlabel("Time (ns)",fontsize=20)
-    ax[4].set_xlabel("X (mm)",fontsize=20)
-    ax[5].set_xlabel("Y (mm)",fontsize=20)
+    ax[4].set_xticks([0, 100, 200, 300])
+    ax[5].set_xticks([0, 50, 100, 150,200])
+    ax[3].set_xlabel("Time (ns)",fontsize=35,labelpad=15)
+    ax[4].set_xlabel("X (mm)",fontsize=35,labelpad=15)
+    ax[5].set_xlabel("Y (mm)",fontsize=35,labelpad=15)
 
     for i in range(3, 6):
-        ax[i].tick_params(axis='both', which='major', labelsize=15)
+        ax[i].tick_params(axis='y', which='major', labelsize=25)
+        ax[i].tick_params(axis='x', which='major',labelsize=28)
 
     plt.subplots_adjust(wspace=0.05, hspace=0.05)
     plt.savefig(outpath, bbox_inches="tight")

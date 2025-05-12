@@ -1,7 +1,7 @@
 #!/bin/bash
 
 theta=25
-momentum=3
+momentum=9
 temperature=1.05
 sampling="Nucleus"
 topK=3000
