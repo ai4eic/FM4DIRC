@@ -49,10 +49,10 @@ def main(config,resume,distributed):
     print('Creating Loaders.')
     data_type = config['data_type']
     if data_type == "Kaons":
-        data_path = config['dataset']['validation']['kaon_data_path']
+        data_path = config['dataset']['training']['kaon_data_path']
         val_data_path = config['dataset']['validation']['kaon_data_path']
     elif data_type == "Pions":
-        data_path = config['dataset']['validation']['pion_data_path']
+        data_path = config['dataset']['training']['pion_data_path']
         val_data_path = config['dataset']['validation']['pion_data_path']
     else:
         raise ValueError("Data type: {0} is not supported.".format(data_type))
