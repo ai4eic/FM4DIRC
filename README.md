@@ -1,8 +1,8 @@
-# [Foundation Models for Imaging Cherenkov Detectors]()
+# [Towards Foundation Models for Experimental Readout Systems Combining Discrete and Continuous Data](https://arxiv.org/abs/2505.08736)
 
 # Abstract
 
-Foundation models ....
+We present a (proto) Foundation Model for Nuclear Physics, capable of operating on low-level detector inputs from Imaging Cherenkov Detectors at the future Electron Ion Collider. To address limitations in existing next-token prediction approaches—namely resolution loss from VQ-VAE tokenization and lack of conditional generation—we propose three key innovations: (i) separate vocabularies for discrete spatial features and continuous variates, combined via Causal Multi-Head Cross-Attention (CMHCA), (ii) continuous kinematic conditioning through prepended context embeddings, and (iii) scalable and simple, high-resolution continuous variate tokenization without joint vocabulary inflation. Our model enables fast, high-fidelity generation of pixel and time sequences for Cherenkov photons, validated through closure tests in the High Performance DIRC. We also show our model generalizes to reconstruction tasks such as pion and kaon identification, in which we show its ability to leverage fine-tuning.
 
 ![Example Hit Patterns](assets/Overlayed_hits.png)
 
@@ -37,7 +37,7 @@ In the case that some packages do not install through the provided conda command
 python3 -m pip install <package>
 ```
 
-Note this environment is intended to work with our previous work [Generative Models for Fast Simulation of Cherenkov Detectors at the Electron-Ion Collider](https://arxiv.org/abs/2504.19042)
+Note this environment is intended to be compatible with our previous work [Generative Models for Fast Simulation of Cherenkov Detectors at the Electron-Ion Collider](https://arxiv.org/abs/2504.19042)
 
 
 # Architecture
@@ -150,7 +150,21 @@ python plot_PDF.py --config config/config.json --method {} --momentum {}  --fs_s
 
 
 
-# Citation
+# Citations
+
+```
+@misc{giroux2025foundationmodelsexperimentalreadout,
+      title={Towards Foundation Models for Experimental Readout Systems Combining Discrete and Continuous Data}, 
+      author={James Giroux and Cristiano Fanelli},
+      year={2025},
+      eprint={2505.08736},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2505.08736}, 
+}
+```
+
+Previous work from which we inherit the dataset.
 
 ```
 @misc{giroux2025generativemodelsfastsimulation,
