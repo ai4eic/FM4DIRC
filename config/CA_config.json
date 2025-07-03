@@ -86,12 +86,12 @@
             "kaon_data_path": "../Cherenkov_FastSim/data/Testing_Kaons_hpDIRC.pkl"
         },
         "training": {
-                "pion_data_path": "../Cherenkov_FastSim/data/Validation_Pions_hpDIRC.pkl",
-                "kaon_data_path": "../Cherenkov_FastSim/data/Validation_Kaons_hpDIRC.pkl"
+                "pion_data_path": "../Cherenkov_FastSim/data/Training_Pions_hpDIRC.pkl",
+                "kaon_data_path": "../Cherenkov_FastSim/data/Training_Kaons_hpDIRC.pkl"
         },
         "validation": {
-            "pion_data_path": "../Cherenkov_FastSim/data/Testing_Pions_hpDIRC.pkl",
-            "kaon_data_path": "../Cherenkov_FastSim/data/Testing_Kaons_hpDIRC.pkl"
+            "pion_data_path": "../Cherenkov_FastSim/data/Validation_Pions_hpDIRC.pkl",
+            "kaon_data_path": "../Cherenkov_FastSim/data/Validation_Kaons_hpDIRC.pkl"
         },
         "testing": {
             "DLL": {
