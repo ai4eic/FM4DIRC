@@ -120,8 +120,8 @@ def photon_yield_plots(path_,label,momentum,outpath):
 
     fig, ax = plt.subplots(figsize=(12, 6))
 
-    ax.bar(np.array(centers) - 1, n_gamma_fs, width=2, label='True Yield', color='black', alpha=0.5)
-    ax.bar(np.array(centers) + 1, n_gamma_truth, width=2, label='Generated Yield', color='red', alpha=0.5)
+    ax.bar(np.array(centers) - 1, n_gamma_fs, width=2, label='Generated Yield', color='black', alpha=0.5)
+    ax.bar(np.array(centers) + 1, n_gamma_truth, width=2, label='True Yield', color='red', alpha=0.5)
 
     ax.set_ylabel('Photon Yield [Counts]', fontsize=30,labelpad=10)
     ax.yaxis.set_major_formatter(ScalarFormatter(useMathText=True))

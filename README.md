@@ -2,7 +2,7 @@
 
 # Abstract
 
-We present a (proto) Foundation Model for Nuclear Physics, capable of operating on low-level detector inputs from Imaging Cherenkov Detectors at the future Electron Ion Collider. To address limitations in existing next-token prediction approaches—namely resolution loss from VQ-VAE tokenization and lack of conditional generation—we propose three key innovations: (i) separate vocabularies for discrete spatial features and continuous variates, combined via Causal Multi-Head Cross-Attention (CMHCA), (ii) continuous kinematic conditioning through prepended context embeddings, and (iii) scalable and simple, high-resolution continuous variate tokenization without joint vocabulary inflation. Our model enables fast, high-fidelity generation of pixel and time sequences for Cherenkov photons, validated through closure tests in the High Performance DIRC. We also show our model generalizes to reconstruction tasks such as pion and kaon identification, in which we show its ability to leverage fine-tuning.
+We present a (proto) Foundation Model for Nuclear Physics, capable of operating on low-level detector inputs from Imaging Cherenkov Detectors at the future Electron Ion Collider. To address limitations in existing next-token prediction approaches—namely resolution loss from VQ-VAE tokenization and lack of conditional generation—we propose four key innovations: (i) separate vocabularies for discrete spatial features and continuous variates, combined via Causal Multi-Head Cross-Attention (CMHCA), (ii) continuous kinematic conditioning through prepended context embeddings, (iii) scalable and simple, high-resolution continuous variate tokenization without joint vocabulary inflation, and (iv) class conditional generation through a Mixture of Experts. Our model enables fast, high-fidelity generation of pixel and time sequences for Cherenkov photons, validated through closure tests in the High Performance DIRC. We also show our model generalizes to reconstruction tasks such as pion and kaon identification, in which we show its ability to leverage fine-tuning, along with noise filtering.
 
 ![Example Hit Patterns](assets/Overlayed_hits.png)
 
@@ -52,10 +52,11 @@ We use a transformer architecture for generation of charged particle tracks in C
 - **Transformer Blocks**:
   - 8 attention heads (CMHCA,MHSA,MHSA)
   - GeLU activations
-  - Pre/post normalization layers
+  - Pre normalization
   - $\ell_2$ normalization of Q/K matrices for scale invariance and stability
 - **Output Heads**: Supports dual-token prediction (space and time) or class prediction.
-- **Class-Specific Training**: Separate models are trained for generation of pions and kaons to maximize fidelity in the high-momentum regime.
+- **Class-Specific Training**: Separate models can be trained for generation of pions and kaons to maximize fidelity in the high-momentum regime.
+- **Class-Conditional Training**: Combined generative models using a Mixture of Experts with fixed (class-wise) routing. In the case of multiple experts per class, we balance the load uniformly over the experts.
 
 ## Example Tokenization
 
@@ -68,7 +69,9 @@ time    → {|p|, θ, SOSₜ, t₁, ..., tₙ, EOSₜ}
 
 # Usage 
 
-Note we have provided all code required to reproduce the results found within the paper, although these require large amounts of simulation from GEANT4. For those interested in training their own models, or reproducing our work, please open an issue. If their exists a high demand, we will update our documentation to and provide instructions for dataset creation, or directly share the datasets permitted.
+Note we have provided all code required to reproduce the results found within the paper, although these require large amounts of simulation from GEANT4 (see [eicdirc](https://github.com/rdom/eicdirc)). For those interested in training their own models, or reproducing our work, please open an issue. If their exists a high demand, we will update our documentation to and provide instructions for dataset creation, or directly share the datasets permitted.
+
+For generative models with or without a mixture of experts, make sure the **model** field of the config file is updated accordingly. This is relevant for both training and inference.
 
 ## Training
 
@@ -83,6 +86,14 @@ For classification, training functions in a similar manner - in which all parame
 ```
 python train_classification.py --config config/CA_config.json --fine_tune_path /path/to/pre/trained/gen/model.pth
 ```
+
+For filtering, training functions in a similar manner - in which all parameters are configuration file based (.json). We also provide an option for fine-tuning from pre-trained generative models. 
+
+```
+python train_filtering.py --config config/CA_config.json --fine_tune_path /path/to/pre/trained/gen/model.pth
+```
+
+If the provided generative model for fine-tuning contains a Mixture of Experts, the weights of the FFNNs will be set as the average. Classification and filtering do not use experts by default.
 
 ## Evaluation
 
@@ -138,17 +149,13 @@ python plot_PDF.py --config config/config.json --method {} --momentum {}  --fs_s
 | `--config`             | `str`   | `CA_config.json` | Path to the config file                                                  |
 | `--fs_support`         | `float` | `1e5`            | Number of Fast Simulated support photons                                 |
 | `--distributed`        | `flag`  | `False`          | Trained with multiple GPUs (DDP)                                         |
-| `--momentum`           | `float` | `6.0`            | Momentum value or range                                                  |
-| `--theta`              | `str`   | `"30"`           | Theta value or range                                                     |
+| `--momentum`           | `float` | `6.0`            | Momentum value.                                                  |
 | `--dark_noise`         | `flag`  | `False`          | Include hits from dark noise (see source code for details)               |
 | `--temperature`        | `float` | `1.05`           | Generation temperature                                                   |
 | `--dynamic_temperature`| `flag`  | `False`          | Use dynamic temperature (see source code for details)                    |
 | `--sampling`           | `str`   | `"Nucleus"`      | Sampling strategy: `Default`, `TopK`, or `Nucleus`                       |
 | `--topK`               | `int`   | `300`            | TopK value (used if sampling = `TopK`)                                   |
 | `--nucleus_p`          | `float` | `0.995`          | Nucleus P value (used if sampling = `Nucleus`)                           |
-
-
-
 
 # Citations
 

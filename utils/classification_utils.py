@@ -272,3 +272,15 @@ def run_plotting(out_folder,momentum,model_type='Swin',skewnorm=False):
     print("NF")
     print("Average sigma: ",np.average(seps_NF)," +- ",np.std(seps_NF) / np.sqrt(len(seps_NF)))
     print(" ")
+
+def compute_metrics(preds_flat,y_flat):
+    TP = ((preds_flat == 1.) & (y_flat == 1.)).sum().item()
+    FP = ((preds_flat == 1.) & (y_flat == 0.)).sum().item()
+    FN = ((preds_flat == 0.) & (y_flat == 1.)).sum().item()
+
+    precision = TP / (TP + FP + 1e-8)
+    recall = TP / (TP + FN + 1e-8)
+    f1 = 2 * precision * recall / (precision + recall + 1e-8)
+
+
+    return precision,recall,f1

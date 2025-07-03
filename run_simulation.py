@@ -50,7 +50,7 @@ def main(config,args):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
-        raise RuntimeError("No GPU was found! Exiting the program.")
+        raise RuntimeError("No GPU was found! Exiting.")
     
     if not args.n_dump:
         print('No value found for n_dump. Setting it equal to {}'.format(int(args.n_tracks)))
@@ -71,6 +71,9 @@ def main(config,args):
     mlp_scale = config['model']['mlp_scale']
     msl = config['model']['max_seq_length']
     drop_rates = config['model']['drop_rates']
+    use_MoE = bool(config['model']['use_MoE'])
+    num_experts = config['model']['num_experts']
+    num_classes = config['model']['num_classes']
     # data params
     inference_batch = config['Inference']['batch_size']
     stats = config['stats']
@@ -94,12 +97,11 @@ def main(config,args):
         time_digitizer = None
         de_tokenize_func = None
 
-    if not args.distributed:
-        net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,detokenize_func=de_tokenize_func,drop_rates=drop_rates)
-    else:
-        net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                num_blocks=num_blocks,hidden_units=hidden_units,use_kinematics=use_kinematics,mlp_scale=mlp_scale,drop_rates=drop_rates)
+    net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
+        num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,
+        time_vocab=time_vocab,detokenize_func=de_tokenize_func,drop_rates=drop_rates,use_MoE=use_MoE,num_experts=num_experts,num_classes=num_classes)
+
+    if args.distributed:
         net = DataParallel(net)
 
     pion_net = copy.deepcopy(net)
@@ -162,7 +164,13 @@ def main(config,args):
                 k_unscaled = k.copy()
                 k = 2*(k - conditional_mins) / (conditional_maxes - conditional_mins) - 1.0
                 k = torch.tensor(k).to('cuda').float()
-                gen = kaon_net.generate(k,unscaled_k=k_unscaled,method=args.sampling,temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p,
+
+                if use_MoE:
+                    class_label = torch.ones((inference_batch,),dtype=torch.float32,device=k.device)
+                else:
+                    class_label = None
+
+                gen = kaon_net.generate(k,unscaled_k=k_unscaled,class_label=class_label,method=args.sampling,temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p,
                                         dynamic_temp=args.dynamic_temperature,add_dark_noise=args.dark_noise,PID=321)
 
             generations += gen
@@ -190,7 +198,13 @@ def main(config,args):
                 k_unscaled = k.copy()
                 k = 2*(k - conditional_mins) / (conditional_maxes - conditional_mins) - 1.0
                 k = torch.tensor(k).to('cuda').float()
-                gen = pion_net.generate(k,unscaled_k=k_unscaled,method=args.sampling,temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p,
+
+                if use_MoE:
+                    class_label = torch.zeros((inference_batch,),dtype=torch.float32,device=k.device)
+                else:
+                    class_label = None
+
+                gen = pion_net.generate(k,unscaled_k=k_unscaled,class_label=class_label,method=args.sampling,temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p,
                                         dynamic_temp=args.dynamic_temperature,add_dark_noise=args.dark_noise,PID=211)
 
             generations += gen

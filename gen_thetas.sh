@@ -27,13 +27,17 @@ do
     if ls "${output_dir}"/*Pion*theta_${theta}* 1> /dev/null 2>&1; then
         echo "Pion file for theta $theta already exists. Skipping..."
     else
-        python generate_fixedpoints.py --config "$config_file" --momentum $momentum --theta $theta --method "Pion" --temperature $temperature --sampling "$sampling" --topK $topK --nucleus_p $np  
+        python generate_fixedpoints.py --config "$config_file" --momentum $momentum --theta $theta \
+                                       --method "Pion" --temperature $temperature --sampling "$sampling" \
+                                       --topK $topK --nucleus_p $np 
     fi
 
     if ls "${output_dir}"/*Kaon*theta_${theta}* 1> /dev/null 2>&1; then
        echo "Kaon file for theta $theta already exists. Skipping..."
     else
-       python generate_fixedpoints.py --config "$config_file" --momentum $momentum --theta $theta --method "Kaon" --temperature $temperature --sampling "$sampling" --topK $topK --nucleus_p $np 
+       python generate_fixedpoints.py --config "$config_file" --momentum $momentum --theta $theta \
+                                      --method "Kaon" --temperature $temperature --sampling "$sampling" \
+                                      --topK $topK --nucleus_p $np 
     fi
 
     theta=$((theta + 5))

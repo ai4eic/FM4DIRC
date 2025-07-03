@@ -151,6 +151,7 @@ def main(config,args):
     device = torch.device('cuda')
 
     # Model params.
+    # Model params.
     vocab_size = config['model']['vocab_size']
     time_vocab = config['model']['time_vocab']
     embed_dim = config['model']['embed_dim']
@@ -161,6 +162,9 @@ def main(config,args):
     mlp_scale = config['model']['mlp_scale']
     msl = config['model']['max_seq_length']
     drop_rates = config['model']['drop_rates']
+    use_MoE = bool(config['model']['use_MoE'])
+    num_experts = config['model']['num_experts']
+    num_classes = config['model']['num_classes']
 
     # data params
     inference_batch = config['Inference']['batch_size']
@@ -186,7 +190,8 @@ def main(config,args):
 
     dicte = torch.load(config['Inference']['pion_model_path'])
     pion_net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,drop_rates=drop_rates,detokenize_func=de_tokenize_func)
+                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,
+                    drop_rates=drop_rates,detokenize_func=de_tokenize_func,use_MoE=use_MoE,num_experts=num_experts,num_classes=num_classes)
     pion_net.to('cuda')
     pion_net.load_state_dict(dicte['net_state_dict'])
     pion_net.eval()
@@ -194,7 +199,8 @@ def main(config,args):
 
     dicte = torch.load(config['Inference']['kaon_model_path'])
     kaon_net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,drop_rates=drop_rates,detokenize_func=de_tokenize_func)
+                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,
+                    drop_rates=drop_rates,detokenize_func=de_tokenize_func,use_MoE=use_MoE,num_experts=num_experts,num_classes=num_classes)
     kaon_net.to('cuda')
     kaon_net.load_state_dict(dicte['net_state_dict'])
     kaon_net.eval()
@@ -277,8 +283,8 @@ def main(config,args):
             fs_kaons = []
             fs_pions = []
             start = time.time()
-            fs_pions = pion_net.generate_PDF(k,k_unscaled,numPhotons=args.fs_support)
-            fs_kaons = kaon_net.generate_PDF(k,k_unscaled,numPhotons=args.fs_support)
+            fs_pions = pion_net.generate_PDF(k,k_unscaled,"Pion",numPhotons=args.fs_support,method="Default",temperature=1.0)
+            fs_kaons = kaon_net.generate_PDF(k,k_unscaled,"Kaon",numPhotons=args.fs_support,method='Default',temperature=1.0)
             end = time.time()
 
         print(" ")

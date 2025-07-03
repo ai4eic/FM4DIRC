@@ -3,6 +3,8 @@ import math
 import pkbar
 import numpy as np
 
+from models.MoE import MoE
+
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -125,8 +127,10 @@ class CrossAttention(nn.Module):
 
 
 class CATransformerBlock(nn.Module):
-    def __init__(self,embed_dim,num_heads, mlp_scale : int = 2,drop_rate: float = 0.2, device='cuda'):
+    def __init__(self,embed_dim,num_heads, mlp_scale : int = 2,drop_rate: float = 0.2,
+                 num_experts: int =4, num_classes: int =2, use_MoE: bool = False, device='cuda'):
         super().__init__()
+        self.use_MoE = use_MoE
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.device = device
@@ -137,16 +141,25 @@ class CATransformerBlock(nn.Module):
         self.attn = CrossAttention(self.embed_dim, self.num_heads, dropout=self.drop_rate,device=self.device)
         self.c_proj = nn.Linear(self.embed_dim,self.embed_dim)
         self.LN2 = nn.LayerNorm(self.embed_dim)
-        self.FF = FF(self.embed_dim,mlp_scale=self.mlp_scale)
+        if self.use_MoE:
+            self.num_experts = num_experts
+            self.num_classes = num_classes 
+            print("CA: ") 
+            print("Number of experts: ",self.num_experts)
+            print("Num Classes: ",self.num_classes)
+            self.FF = MoE(self.embed_dim,mlp_scale=self.mlp_scale,num_experts=self.num_experts,num_classes=self.num_classes)
+        else:
+            self.FF = FF(self.embed_dim,mlp_scale=self.mlp_scale)
 
 
     def generate_mask(self,seq_len):
         return torch.triu(torch.ones((seq_len, seq_len), device=self.device, dtype=torch.bool), diagonal=1)
 
-    def forward(self,x,t_embed,padding_mask=None,need_weights=False,classification=False):
+    def forward(self,x,t_embed,class_label,padding_mask=None,need_weights=False,classification=False):
         B,N_t,t_dim = x.shape
         x_norm = self.xN(x)
         t_norm = self.tN(t_embed)
+        load_balance = torch.tensor([0.0],dtype=torch.float32,device=x.device) # place holder for non MoE model return
 
         if not classification:
             mask_ = self.generate_mask(N_t)
@@ -156,8 +169,13 @@ class CATransformerBlock(nn.Module):
 
         attn = self.c_proj(attn)
         x = x + attn
-        x = x + self.FF(self.LN2(x))
-        return x
+
+        if self.use_MoE:
+            res,load_balance = self.FF(self.LN2(x),class_label,padding_mask=padding_mask)
+            x = x + res
+        else:
+            x = x + self.FF(self.LN2(x))
+        return x,load_balance
 
 
 class MHSA(nn.Module):
@@ -223,9 +241,10 @@ class MHSA(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self,embed_dim,num_heads, mlp_scale : int = 2,drop_rate: float = 0.2, device='cuda'):
+    def __init__(self,embed_dim,num_heads, mlp_scale : int = 2,drop_rate: float = 0.2,
+                 num_experts: int =4, num_classes: int =2, use_MoE: bool = False, device='cuda'):
         super().__init__()
-        
+        self.use_MoE = use_MoE
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.device = device
@@ -235,15 +254,24 @@ class TransformerBlock(nn.Module):
         self.attn = MHSA(self.embed_dim, self.num_heads, dropout=self.drop_rate,device=self.device)
         self.c_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=False)
         self.LN2 = nn.LayerNorm(self.embed_dim)
-        self.FF = FF(self.embed_dim,mlp_scale=self.mlp_scale)
-
+    
+        if self.use_MoE:
+            self.num_experts = num_experts
+            self.num_classes = num_classes
+            print("MHSA: ") 
+            print("Number of experts: ",self.num_experts)
+            print("Num Classes: ",self.num_classes)
+            self.FF = MoE(self.embed_dim,mlp_scale=self.mlp_scale,num_experts=self.num_experts,num_classes=self.num_classes)
+        else:
+            self.FF = FF(self.embed_dim,mlp_scale=self.mlp_scale)
 
     def generate_mask(self,seq_len):
         return torch.triu(torch.ones((seq_len, seq_len), device=self.device, dtype=torch.bool), diagonal=1)
 
-    def forward(self, x,padding_mask=None,need_weights=False,classification=False):
+    def forward(self, x,class_label,padding_mask=None,need_weights=False,classification=False):
         B,N_t,t_dim = x.shape
         x_norm = self.LN1(x)
+        load_balance = torch.tensor([0.0],dtype=torch.float32,device=x.device) # place holder for non MoE model return
 
         if not classification:
             mask_ = self.generate_mask(N_t)
@@ -254,20 +282,40 @@ class TransformerBlock(nn.Module):
         attn = self.c_proj(attn)
 
         x = x + attn
-        x = x + self.FF(self.LN2(x))
-        return x
+
+        if self.use_MoE:
+            res,load_balance = self.FF(self.LN2(x),class_label,padding_mask=padding_mask)
+            x = x + res
+        else:
+            x = x + self.FF(self.LN2(x))
+
+        return x,load_balance
 
 
 
 class Cherenkov_GPT(nn.Module):
     def __init__(self, vocab_size, seq_len, embed_dim,attn_heads = [2,4,2],kin_size=2,
                 num_blocks=2,hidden_units=128, digitize_time=True, mlp_scale : int = 2,
-                time_vocab : int = 5923,drop_rates=[0.0,0.0,0.0],
+                time_vocab : int = 5923,space_vocab=6147,drop_rates=[0.0,0.0,0.0],
                 detokenize_func = None,
                 classification=False,
+                sequence_level=False,
+                use_MoE = False, num_experts: int = 4,num_classes: int = 2,
                 device='cuda'):
         super().__init__()
+
+        self.use_MoE = use_MoE
         self.classification = classification
+        self.sequence_level = sequence_level
+        assert not (self.classification and self.use_MoE), "MoE must be off in classification mode"
+        assert not (self.sequence_level and self.use_MoE), "MoE must be off in sequence-level mode"
+        self.num_experts = num_experts
+        self.num_classes = num_classes
+        if self.use_MoE:
+            print("Using Mixture of Experts.")
+        else:
+            print("Using traditional FFN.")
+
         self.digitize_time = digitize_time
         self.detokenize_func = detokenize_func
         self.token_embedding = nn.Embedding(vocab_size, embed_dim)
@@ -276,12 +324,14 @@ class Cherenkov_GPT(nn.Module):
         self.momentum_embedding = nn.Linear(1,embed_dim) 
         self.theta_embedding = nn.Linear(1,embed_dim)
         # Can refactor this - fine for now
-        layers_ = [CATransformerBlock(embed_dim, attn_heads[0], mlp_scale,drop_rate=drop_rates[0])]  
-        layers_ += [TransformerBlock(embed_dim, attn_heads[i], mlp_scale,drop_rate=drop_rates[i]) for i in range(1, len(attn_heads))] 
+        layers_ = [CATransformerBlock(embed_dim, attn_heads[0], mlp_scale,drop_rate=drop_rates[0],use_MoE=self.use_MoE,
+                                      num_experts=self.num_experts,num_classes=self.num_classes)]  
+        layers_ += [TransformerBlock(embed_dim, attn_heads[i], mlp_scale,drop_rate=drop_rates[i],use_MoE=self.use_MoE,
+                                     num_experts=self.num_experts,num_classes=self.num_classes) for i in range(1, len(attn_heads))] 
         self.layers = nn.ModuleList(layers_)
         self.LN = nn.LayerNorm(embed_dim)
 
-        if not self.classification:
+        if not self.classification and not self.sequence_level:
             if self.digitize_time: # Multiclass
                 self.time_embedding = nn.Embedding(time_vocab,embed_dim)
                 self.time_head = nn.Linear(embed_dim,time_vocab) 
@@ -291,7 +341,7 @@ class Cherenkov_GPT(nn.Module):
 
             self.logits_head = nn.Linear(embed_dim, vocab_size)
 
-        else:
+        elif self.classification and not self.sequence_level:
             if self.digitize_time: # Time resolution based tokenization
                 self.time_embedding = nn.Embedding(time_vocab,embed_dim)
             else: # Fully continuous
@@ -299,15 +349,23 @@ class Cherenkov_GPT(nn.Module):
 
             self.classification_head = nn.Linear(embed_dim,1)
             self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
+
+        else:
+            if self.digitize_time: # Time resolution based tokenization
+                self.time_embedding = nn.Embedding(time_vocab,embed_dim)
+            else: # Fully continuous
+                self.time_embedding = nn.Linear(1,embed_dim)
+
+            self.sequence_head = nn.Linear(embed_dim,1)
         
         self.device = device
         self.SOS_token = 0
-        self.EOS_token = 6145
-        self.pad_token = 6146
-        self.time_pad_token = time_vocab - 1
-        self.EOS_time_token = time_vocab - 2
+        self.EOS_token = space_vocab - 2 # 6145
+        self.pad_token = space_vocab - 1 # 6146
+        self.EOS_time_token = time_vocab - 2 # 5921
+        self.time_pad_token = time_vocab - 1 # 5922
 
-    def forward(self, x,t,k,padding_mask=None):
+    def forward(self, x,t,k,class_label=None,padding_mask=None):
         seq_len = x.shape[1]
         batch_size = x.shape[0]
         pos = torch.arange(0, seq_len, dtype=torch.long, device=x.device).unsqueeze(0)
@@ -331,27 +389,36 @@ class Cherenkov_GPT(nn.Module):
 
         # Instead of adding time and position embeddings, combine through Cross attention
         # Query from time space, given space (key,value) 
-
         if padding_mask is not None:
             kinematic_mask = torch.zeros(batch_size, k.shape[-1], dtype=torch.bool, device=x.device)  # No masking for kinematic tokens
             padding_mask = torch.cat((kinematic_mask, padding_mask), dim=1) 
 
-        if self.classification:
+        if self.classification and not self.sequence_level:
             cls_tokens = self.cls_token.expand(batch_size, -1, -1)
             cls_mask = torch.zeros(batch_size,1,dtype=torch.bool,device=x.device) # no mask for cls token
             padding_mask = torch.cat((cls_mask,padding_mask),dim=1)
             x = torch.cat((cls_tokens,x),dim=1)
             t_embed = torch.cat((cls_tokens,t_embed),dim=1)
 
-        for layer in self.layers:
-            if layer.__class__.__name__ == "CATransformerBlock":
-                x = layer(x, t_embed,padding_mask=padding_mask,classification=self.classification)
-            else:
-                x = layer(x,padding_mask=padding_mask,classification=self.classification)
+        if self.training:
+            load_balance = 0.
+            for layer in self.layers:
+                if layer.__class__.__name__ == "CATransformerBlock":
+                    x,load = layer(x, t_embed,class_label,padding_mask=padding_mask,classification=self.classification)
+                else:
+                    x,load = layer(x,class_label,padding_mask=padding_mask,classification=self.classification)
+                load_balance += load
+
+        else:
+            for layer in self.layers:
+                if layer.__class__.__name__ == "CATransformerBlock":
+                    x,_ = layer(x, t_embed,class_label,padding_mask=padding_mask,classification=self.classification)
+                else:
+                    x,_ = layer(x,class_label,padding_mask=padding_mask,classification=self.classification)      
         
         x = self.LN(x)
  
-        if not self.classification: # Generations - next hit prediction
+        if not self.classification and not self.sequence_level: # Generations - next hit prediction - sequence level will also be false then
             if not self.digitize_time:
                 t_out = self.time_head(x).squeeze(-1) # direct regression of time 
             else:
@@ -359,10 +426,16 @@ class Cherenkov_GPT(nn.Module):
 
             pixel = self.logits_head(x)
 
+            if self.training:
+                return pixel,t_out,load_balance
+
             return pixel,t_out
 
-        else:
+        elif self.classification and not self.sequence_level:
             return self.classification_head(x[:, 0]).squeeze(-1)
+
+        else:
+            return self.sequence_head(x).squeeze(-1)
 
     def __topK(self,logits,topK=50):
         topk_logits, topk_indices = torch.topk(logits, k=topK, dim=-1)
@@ -474,8 +547,8 @@ class Cherenkov_GPT(nn.Module):
 
 
     @torch.no_grad()
-    def generate(self, k, unscaled_k, max_seq_len: int = 250, context_len = None,
-                 temperature: float = 1.05, method="Default", topK=100, nucleus_p=0.98,
+    def generate(self, k, unscaled_k,class_label=None, max_seq_len: int = 250, context_len = None,
+                 temperature: float = 1.0, method="Default", topK=100, nucleus_p=0.98,
                  dynamic_temp=False,add_dark_noise=False,PID=None):
 
         assert method in ["Nucleus", "TopK", "Default","Greedy","Min_p"]
@@ -501,7 +574,7 @@ class Cherenkov_GPT(nn.Module):
                 idx_cond = idx[:, -context_len:]
                 t_cond = t[:, -context_len:]
 
-            logits, logits_time = self(idx_cond, t_cond, k, padding_mask=None)
+            logits, logits_time = self(idx_cond, t_cond, k,class_label, padding_mask=None)
 
             logits = logits[:, -1, :] / temperature
 
@@ -555,7 +628,7 @@ class Cherenkov_GPT(nn.Module):
 
 
     @torch.no_grad()
-    def generate_PDF(self,kinematics,unscaled_k, numPhotons=2e5,max_seq_len: int = 250,
+    def generate_PDF(self,kinematics,unscaled_k,PID=None, numPhotons=2e5,max_seq_len: int = 250,
                  context_len = None, temperature: float = 1.05, method="Nucleus", topK=100,
                  nucleus_p=0.995, dynamic_temp=False,add_dark_noise=False):
 
@@ -567,10 +640,18 @@ class Cherenkov_GPT(nn.Module):
         torch.cuda.empty_cache()
         tracks = []
         n_total = 0
+
+        if PID == "Pion" and self.use_MoE:
+            class_label = torch.zeros((batch_size,),dtype=torch.float32,device=kinematics.device)
+        elif PID == "Kaon" and self.use_MoE:
+            class_label = torch.ones((batch_size,),dtype=torch.float32,device=kinematics.device)
+        else:
+            class_label = None
+
         while n_total < numPhotons:
 
             with torch.no_grad():
-                track = self.generate(kinematics,unscaled_k,method=method,temperature=temperature,
+                track = self.generate(kinematics,unscaled_k,class_label=class_label,method=method,temperature=temperature,
                                       topK=topK,nucleus_p=nucleus_p,dynamic_temp=dynamic_temp,add_dark_noise=add_dark_noise)
 
             tracks += track

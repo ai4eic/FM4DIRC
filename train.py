@@ -17,9 +17,9 @@ import math
 import warnings
 from datetime import datetime
 
-from dataloader.dataset import DIRC_Dataset
+from dataloader.dataset import DIRC_Dataset,DIRC_Dataset_Classification
 from dataloader.tokenizer import TimeTokenizer
-from dataloader.dataloader import CreateLoaders
+from dataloader.dataloader import CreateLoaders,CreateLoadersMoE
 
 from models.GPT import Cherenkov_GPT
 
@@ -45,18 +45,6 @@ def main(config,resume,distributed):
     with open(os.path.join(output_folder,exp_name,'config.json'),'w') as outfile:
         json.dump(config, outfile)
 
-
-    print('Creating Loaders.')
-    data_type = config['data_type']
-    if data_type == "Kaons":
-        data_path = config['dataset']['training']['kaon_data_path']
-        val_data_path = config['dataset']['validation']['kaon_data_path']
-    elif data_type == "Pions":
-        data_path = config['dataset']['training']['pion_data_path']
-        val_data_path = config['dataset']['validation']['pion_data_path']
-    else:
-        raise ValueError("Data type: {0} is not supported.".format(data_type))
-
     # Model params.
     vocab_size = config['model']['vocab_size']
     time_vocab = config['model']['time_vocab']
@@ -68,6 +56,9 @@ def main(config,resume,distributed):
     mlp_scale = config['model']['mlp_scale']
     msl = config['model']['max_seq_length']
     drop_rates = config['model']['drop_rates']
+    num_experts = config['model']['num_experts']
+    num_classes = config['model']['num_classes']
+    use_MoE = bool(config['model']['use_MoE'])
 
     # Time tokenization
     digitize_time = bool(config['digitize_time'])
@@ -79,14 +70,38 @@ def main(config,resume,distributed):
         t_min = config['stats']['time_min']
         print("T_Max: ",t_max," T_Min: ",t_min, "T_Res: ",time_res)
         time_digitizer = TimeTokenizer(t_max=t_max,t_min=t_min,resolution=time_res)
-
     else:
         print("Using regression over time domain.")
         time_digitizer = None
 
+    print('Creating Loaders.')
+    data_type = config['data_type']
 
-    train_dataset = DIRC_Dataset(data_path=data_path,data_type=data_type,max_seq_length=msl,time_digitizer=time_digitizer,stats=config['stats'])
-    val_dataset = DIRC_Dataset(data_path=val_data_path,data_type=data_type,max_seq_length=msl,time_digitizer=time_digitizer,stats=config['stats'])
+    if use_MoE:
+        print("Conditional generation with MoE - singular generative model training.")
+
+        pion_path = config['dataset']['training']['pion_data_path']
+        kaon_path = config['dataset']['training']['kaon_data_path']
+        val_pion_path = config['dataset']['validation']['pion_data_path']
+        val_kaon_path = config['dataset']['validation']['kaon_data_path']
+
+        train_dataset = DIRC_Dataset_Classification(pion_path=pion_path,kaon_path=kaon_path,max_seq_length=msl,time_digitizer=time_digitizer,stats=config['stats'])
+        val_dataset = DIRC_Dataset_Classification(pion_path=val_pion_path,kaon_path=val_kaon_path,max_seq_length=msl,time_digitizer=time_digitizer,stats=config['stats'])
+        train_loader,val_loader = CreateLoadersMoE(train_dataset,val_dataset,config)
+    else:
+        if data_type == "Kaons":
+            data_path = config['dataset']['training']['kaon_data_path']
+            val_data_path = config['dataset']['validation']['kaon_data_path']
+        elif data_type == "Pions":
+            data_path = config['dataset']['training']['pion_data_path']
+            val_data_path = config['dataset']['validation']['pion_data_path']
+        else:
+            raise ValueError("Data type: {0} is not supported.".format(data_type))
+
+        train_dataset = DIRC_Dataset(data_path=val_data_path,data_type=data_type,max_seq_length=msl,time_digitizer=time_digitizer,stats=config['stats'])
+        val_dataset = DIRC_Dataset(data_path=val_data_path,data_type=data_type,max_seq_length=msl,time_digitizer=time_digitizer,stats=config['stats'])
+        train_loader,val_loader = CreateLoaders(train_dataset,val_dataset,config)
+
     pad_token = train_dataset.pad_token
     EOS_token = train_dataset.EOS_token
     SOS_token = train_dataset.SOS_token
@@ -101,18 +116,16 @@ def main(config,resume,distributed):
 
     history = {'train_loss':[],'val_loss':[],'lr':[]}
     run_val = True
-    train_loader,val_loader = CreateLoaders(train_dataset,val_dataset,config)
-
+    
+    net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
+            num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,
+            time_vocab=time_vocab,drop_rates=drop_rates,use_MoE=use_MoE,num_experts=num_experts,num_classes=num_classes)
 
     if not distributed:
         print("Using single GPU.")
-        net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,time_vocab=time_vocab,drop_rates=drop_rates)
     else:
         print("Using {0} GPUs.".format(torch.cuda.device_count()))
         print(" ")
-        net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,time_vocab=time_vocab,drop_rates=drop_rates)
         net = DataParallel(net)
 
     t_params = sum(p.numel() for p in net.parameters())
@@ -120,7 +133,11 @@ def main(config,resume,distributed):
     net.to('cuda')
 
 	# Optimizer
-    num_epochs = int(config['num_epochs'])
+    if use_MoE:
+        num_epochs = int(config['num_epochs_MoE'])
+    else:
+        num_epochs = int(config['num_epochs'])
+
     lr = float(config['optimizer']['lr'])
 
     # No need for warmup
@@ -165,8 +182,13 @@ def main(config,resume,distributed):
         running_loss = 0.0
 
         for i, data in enumerate(train_loader):
-
             tokens  = data[0].to('cuda').long()
+
+            if use_MoE:
+                class_label = data[-1].to('cuda').float()
+            else:
+                class_label = None
+
             next_tokens = tokens[:, 1:].clone()
             tokens = tokens[:, :-1]  
             
@@ -185,7 +207,7 @@ def main(config,resume,distributed):
             optimizer.zero_grad()
 
             with torch.set_grad_enabled(True):
-                logits,t = net(tokens,times,k,padding_mask=padding_mask)
+                logits,t,load_balance = net(tokens,times,k,class_label=class_label,padding_mask=padding_mask)
 
 
             logits = logits[:,k.shape[1]:,:]
@@ -199,14 +221,14 @@ def main(config,resume,distributed):
             else:
                 time_loss = time_ce(t.reshape(-1, t.size(-1)), next_times.reshape(-1))
 
-            loss = pixel_loss + time_loss
+            loss = pixel_loss + time_loss + load_balance
             loss.backward()
             torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=1.0)
             optimizer.step()
 			# statistics
             running_loss += loss.item() * tokens.shape[0]
 
-            kbar.update(i, values=[("loss", loss.item()),("pix",pixel_loss.item()),("time",time_loss.item())])
+            kbar.update(i, values=[("loss", loss.item()),("pix",pixel_loss.item()),("time",time_loss.item()),("load",load_balance.item())])
 
             global_step += 1
         
@@ -221,6 +243,12 @@ def main(config,resume,distributed):
             val_pixel_loss = 0.0
             for i, data in enumerate(val_loader):
                 tokens  = data[0].to('cuda').long()
+
+                if use_MoE:
+                    class_label = data[-1].to('cuda').float()
+                else:
+                    class_label = None
+
                 next_tokens = tokens[:, 1:].clone()
                 tokens = tokens[:, :-1]  
                 
@@ -237,7 +265,7 @@ def main(config,resume,distributed):
                 padding_mask = (tokens == pad_token).to('cuda',dtype=torch.bool)
                 
                 with torch.no_grad():
-                    logits,t = net(tokens,times,k,padding_mask=padding_mask)
+                    logits,t = net(tokens,times,k,class_label=class_label,padding_mask=padding_mask)
 
                 logits = logits[:,k.shape[1]:,:]
                 t = t[:,k.shape[1]:,:]

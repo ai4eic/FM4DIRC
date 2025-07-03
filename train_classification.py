@@ -14,6 +14,8 @@ import pkbar
 import warnings
 from datetime import datetime
 
+from utils.utils import init_from_MoE
+
 from dataloader.dataset import DIRC_Dataset_Classification
 from dataloader.tokenizer import TimeTokenizer
 from dataloader.dataloader import CreateLoadersClassification
@@ -61,6 +63,8 @@ def main(config,resume,distributed):
     mlp_scale = config['model']['mlp_scale']
     msl = config['model']['max_seq_length']
     drop_rates = config['model']['drop_rates']
+    # Set MoE False here explicitly - don't need it.
+    use_MoE = False
     
     # Time tokenization
     digitize_time = bool(config['digitize_time'])
@@ -95,16 +99,16 @@ def main(config,resume,distributed):
     print(f"Time   - Pad: {time_pad_token}, SOS: {SOS_token}, EOS: {time_EOS_token}")
     print("=====================================")
 
+    net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
+            num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,
+            time_vocab=time_vocab,drop_rates=drop_rates,classification=True,use_MoE=use_MoE)
+
 
     if not distributed:
         print("Using single GPU.")
-        net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,time_vocab=time_vocab,drop_rates=drop_rates,classification=True)
     else: # Just DP - not efficient but limited GPU so not used anyways
         print("Using {0} GPUs.".format(torch.cuda.device_count()))
         print(" ")
-        net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,time_vocab=time_vocab,drop_rates=drop_rates,classification=True)
         net = DataParallel(net)
 
     t_params = sum(p.numel() for p in net.parameters())
@@ -116,6 +120,9 @@ def main(config,resume,distributed):
         print("Fine tuning from generative model.")
         dicte_ = torch.load(args.fine_tune_path)
         net.load_state_dict(dicte_['net_state_dict'],strict=False)
+        # If generative model is MoE, init FF blocks as average weights and biases
+        if any("experts" in k for k in dicte_['net_state_dict'].keys()):
+            net = init_from_MoE(dicte_['net_state_dict'],net)
     else:
         print("Training model from scratch.")
 

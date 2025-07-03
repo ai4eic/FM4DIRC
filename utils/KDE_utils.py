@@ -75,7 +75,6 @@ def plot(fit_params,DLL_p,DLL_k,support_method,out_folder,theta,pdf_method,bins=
     else:
        gaussian = gaussian_unnormalized
 
-
     fig = plt.figure(figsize=(6,4))
     if momentum == 6.0:
         bins_ = np.linspace(-10.,10.,bins)

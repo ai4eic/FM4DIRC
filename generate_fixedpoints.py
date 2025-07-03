@@ -62,6 +62,9 @@ def main(config,args):
     mlp_scale = config['model']['mlp_scale']
     msl = config['model']['max_seq_length']
     drop_rates = config['model']['drop_rates']
+    use_MoE = bool(config['model']['use_MoE'])
+    num_experts = config['model']['num_experts']
+    num_classes = config['model']['num_classes']
     # data params
     inference_batch = config['Inference']['batch_size']
     stats = config['stats']
@@ -85,12 +88,11 @@ def main(config,args):
         time_digitizer = None
         de_tokenize_func = None
 
-    if not args.distributed:
-        net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,detokenize_func=de_tokenize_func,drop_rates=drop_rates)
-    else:
-        net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                num_blocks=num_blocks,hidden_units=hidden_units,use_kinematics=use_kinematics,mlp_scale=mlp_scale,drop_rates=drop_rates)
+    net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
+        num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,
+        time_vocab=time_vocab,detokenize_func=de_tokenize_func,drop_rates=drop_rates,use_MoE=use_MoE,num_experts=num_experts,num_classes=num_classes)
+
+    if args.distributed:
         net = DataParallel(net)
 
     t_params = sum(p.numel() for p in net.parameters())
@@ -153,6 +155,13 @@ def main(config,args):
     k_unscaled = np.tile(k.copy(), (inference_batch, 1))
     k = 2*(k - conditional_mins) / (conditional_maxes - conditional_mins) - 1.0
     k = torch.tensor(k).to('cuda').float().unsqueeze(0).repeat(inference_batch, 1)
+    
+    if config['method'] == "Pion" and use_MoE:
+        class_label = torch.zeros((inference_batch,),dtype=torch.float32,device=k.device)
+    elif config['method'] == "Kaon" and use_MoE:
+        class_label = torch.ones((inference_batch,),dtype=torch.float32,device=k.device)
+    else:
+        class_label = None
 
     num_itter = numTracks // inference_batch
     last_batch = numTracks % inference_batch
@@ -167,6 +176,9 @@ def main(config,args):
     else:
         pass
 
+    if args.dynamic_temp:
+        print("Using dynamic temperature scaling - exponential decay. See class reference.")
+
     kbar = pkbar.Kbar(target=num_itter + 1, width=20, always_stateful=False)
 
     fast_sim = []
@@ -175,7 +187,9 @@ def main(config,args):
     for i in range(num_itter):
 
         with torch.no_grad():
-            tracks = net.generate(k,unscaled_k=k_unscaled,method=args.sampling,temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p)
+            tracks = net.generate(k,unscaled_k=k_unscaled,class_label=class_label,method=args.sampling,
+                                  temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p,
+                                  dynamic_temp=args.dynamic_temp)
 
         fast_sim += tracks
 
@@ -189,10 +203,19 @@ def main(config,args):
         k = np.array([args.momentum,args.theta])
         k_unscaled = k_unscaled = np.tile(k.copy(), (last_batch, 1))
         k = 2*(k - conditional_mins) / (conditional_maxes - conditional_mins) - 1.0
-        k = torch.tensor(k).to('cuda').float().unsqueeze(0).repeat(last_batch, 1)   
+        k = torch.tensor(k).to('cuda').float().unsqueeze(0).repeat(last_batch, 1)  
+
+        if config['method'] == "Pion" and use_MoE:
+            class_label = torch.zeros((last_batch,),dtype=torch.float32,device=k.device)
+        elif config['method'] == "Kaon" and use_MoE:
+            class_label = torch.ones((last_batch,),dtype=torch.float32,device=k.device)
+        else:
+            class_label = None 
 
         with torch.no_grad():
-            tracks = net.generate(k,unscaled_k=k_unscaled,method=args.sampling,temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p)  
+            tracks = net.generate(k,unscaled_k=k_unscaled,class_label=class_label,method=args.sampling,
+                                  temperature=args.temperature,topK=args.topK,nucleus_p=args.nucleus_p,
+                                  dynamic_temp=args.dynamic_temp)  
 
         fast_sim += tracks
 
@@ -245,6 +268,7 @@ if __name__=='__main__':
     parser.add_argument('-s','--sampling',default="Nucleus",type=str,help='Default,TopK,Nucleus')
     parser.add_argument('-tk','--topK',default=300,type=int,help="TopK - only used if sampling = TopK")
     parser.add_argument('-np','--nucleus_p',default=0.95,type=float,help="Nucleus P value - only used if sampling = Nucleus")
+    parser.add_argument('-dt','--dynamic_temp',action='store_true',help='Dynamic temperature scaling - exponential decay.')
     args = parser.parse_args()
 
     #args.context_len = None

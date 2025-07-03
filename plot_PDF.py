@@ -60,6 +60,9 @@ def main(config,args):
     mlp_scale = config['model']['mlp_scale']
     msl = config['model']['max_seq_length']
     drop_rates = config['model']['drop_rates']
+    use_MoE = bool(config['model']['use_MoE'])
+    num_experts = config['model']['num_experts']
+    num_classes = config['model']['num_classes']
     # data params
     inference_batch = config['Inference']['batch_size']
     stats = config['stats']
@@ -83,12 +86,11 @@ def main(config,args):
         time_digitizer = None
         de_tokenize_func = None
 
-    if not args.distributed:
-        net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                    num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,detokenize_func=de_tokenize_func,drop_rates=drop_rates)
-    else:
-        net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
-                num_blocks=num_blocks,hidden_units=hidden_units,use_kinematics=use_kinematics,mlp_scale=mlp_scale,drop_rates=drop_rates)
+    net = Cherenkov_GPT(vocab_size, msl, embed_dim,attn_heads=attn_heads,kin_size=kin_size,
+        num_blocks=num_blocks,hidden_units=hidden_units,digitize_time=digitize_time,mlp_scale=mlp_scale,
+        time_vocab=time_vocab,detokenize_func=de_tokenize_func,drop_rates=drop_rates,use_MoE=use_MoE,num_experts=num_experts,num_classes=num_classes)
+
+    if args.distributed:
         net = DataParallel(net)
 
     pion_net = copy.deepcopy(net)
@@ -121,8 +123,8 @@ def main(config,args):
             k = torch.tensor(k).to('cuda').float().unsqueeze(0).repeat(inference_batch, 1)
             
             start = time.time()
-            support_pions = pion_net.generate_PDF(k,k_unscaled,numPhotons=args.fs_support)
-            support_kaons = kaon_net.generate_PDF(k,k_unscaled,numPhotons=args.fs_support)
+            support_pions = pion_net.generate_PDF(k,k_unscaled,"Pion",numPhotons=args.fs_support)
+            support_kaons = kaon_net.generate_PDF(k,k_unscaled,"Kaon",numPhotons=args.fs_support)
             end = time.time()
           
         print("Time to create both PDFs: ",end - start)
@@ -140,8 +142,7 @@ if __name__=='__main__':
                         help='Path to the config file (default: CA_config.json)')
     parser.add_argument('-fs','--fs_support', default=10e4,type=float,help='Number of Fast Simulated support photons.')
     parser.add_argument('-d','--distributed',action='store_true',help='Trained with multiple GPUs - DDP.')
-    parser.add_argument('-p','--momentum',default=6.0,type=float,help='Momentum value, or range.')
-    parser.add_argument('-th','--theta',default="30",type=str,help='Theta value, or range.')
+    parser.add_argument('-p','--momentum',default=6.0,type=float,help='Momentum value.')
     parser.add_argument('-dn','--dark_noise',action='store_true',help='Included hits from dark noise with predefined rate. See source code for more details.')
     parser.add_argument('-tmp','--temperature',default=1.05,type=float,help='Generation temperature.')
     parser.add_argument('-dt', '--dynamic_temperature',action='store_true',help='Use dynamic temperature with predefined values. See source code for more details.')

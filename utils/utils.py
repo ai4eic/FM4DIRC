@@ -87,3 +87,43 @@ def log_vram_usage(tag=""):
     
     print(f"VRAM_LOG,{tag},{allocated:.2f},{reserved:.2f},{peak_allocated:.2f}")
     return allocated, reserved, peak_allocated
+
+def init_from_MoE(net_state_dict,net):
+    keys = list(net_state_dict.keys())
+    layers_ = [s for s in keys if 'layers' in s]
+    num_layers = layers_[-1].split(".")[1]
+    avg_weights = {}
+    for i in range(int(num_layers)+1):
+        sub_keys = [s for s in keys if f"layers.{i}.FF.experts" in s]
+        num_experts = sub_keys[-1].split(".")[-4]
+        expert_W1,expert_W2,expert_B1,expert_B2 = [],[],[],[]
+        
+        for j in range(int(num_experts)+1):
+            expert_W1 += [s for s in keys if f"layers.{i}.FF.experts.{j}.nn.0.weight" in s]
+            expert_W2 += [s for s in keys if f"layers.{i}.FF.experts.{j}.nn.2.weight" in s]
+            expert_B1 += [s for s in keys if f"layers.{i}.FF.experts.{j}.nn.0.bias" in s]
+            expert_B2 += [s for s in keys if f"layers.{i}.FF.experts.{j}.nn.2.bias" in s]
+
+        expert_W1 = torch.concat([net_state_dict[s].unsqueeze(0) for s in expert_W1],dim=0)
+        expert_W2 = torch.concat([net_state_dict[s].unsqueeze(0) for s in expert_W2],dim=0)
+        avg_weight1 = torch.mean(expert_W1,dim=0)
+        avg_weight2 = torch.mean(expert_W2,dim=0)
+
+        expert_B1 = torch.concat([net_state_dict[s].unsqueeze(0) for s in expert_B1],dim=0)
+        expert_B2 = torch.concat([net_state_dict[s].unsqueeze(0) for s in expert_B2],dim=0)
+        avg_bias1 = torch.mean(expert_B1,dim=0)
+        avg_bias2 = torch.mean(expert_B2,dim=0)
+
+        
+        try:
+            if hasattr(net.layers[i],"FF"):
+                net.layers[i].FF.nn[0].weight = torch.nn.Parameter(avg_weight1,requires_grad=True).to(net.device)
+                net.layers[i].FF.nn[2].weight = torch.nn.Parameter(avg_weight2,requires_grad=True).to(net.device)
+                net.layers[i].FF.nn[0].bias = torch.nn.Parameter(avg_bias1,requires_grad=True).to(net.device)
+                net.layers[i].FF.nn[2].bias = torch.nn.Parameter(avg_bias2,requires_grad=True).to(net.device)
+            print(f"Succesfully initalized FF block {i} from average of {int(num_experts)+1} expert weights")
+            
+        except (AttributeError, IndexError) as e:
+            print(f"Skipping layer {i} due to missing FF structure: {e}")
+            
+    return net
